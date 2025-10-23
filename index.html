@@ -999,8 +999,10 @@
             if (isAdmin) {
                 await loadUserList();
                 await loadUsers();
+            } else {
+                // Only load games for regular users
+                await loadWeek();
             }
-            await loadWeek();
             setupAutoRefresh();
         }
 
