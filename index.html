@@ -616,8 +616,14 @@
                     
                     <div style="background: white; padding: 25px; border-radius: 8px;">
                         <div class="input-group" style="margin-bottom: 15px;">
-                            <label style="font-size: 18px; color: #002244;">Username</label>
-                            <input type="text" id="newUsername" placeholder="Enter new username" style="font-size: 18px; padding: 15px;">
+                            <label style="font-size: 18px; color: #002244;">Username (for login only)</label>
+                            <input type="text" id="newUsername" placeholder="Email or username for login" style="font-size: 18px; padding: 15px;">
+                            <small style="color: #666; margin-top: 5px; display: block;">This will be used to login - kept private</small>
+                        </div>
+                        <div class="input-group" style="margin-bottom: 15px;">
+                            <label style="font-size: 18px; color: #002244;">Screen Name (public display)</label>
+                            <input type="text" id="newScreenName" placeholder="Name shown on dashboard" style="font-size: 18px; padding: 15px;">
+                            <small style="color: #666; margin-top: 5px; display: block;">This will be shown on dashboards and standings</small>
                         </div>
                         <button class="btn btn-success" onclick="addUser()" style="font-size: 18px; padding: 16px 40px; width: 100%;">➕ Add User</button>
                         
@@ -806,9 +812,15 @@
 
         async function addUser() {
             const username = document.getElementById('newUsername').value.trim();
+            const screenName = document.getElementById('newScreenName').value.trim();
             
             if (!username) {
                 showStatus("Please enter a username", "error");
+                return;
+            }
+            
+            if (!screenName) {
+                showStatus("Please enter a screen name", "error");
                 return;
             }
             
@@ -826,13 +838,15 @@
             
             try {
                 await db.ref(`users/${sanitizedUsername}`).set({
-                    displayName: username,
+                    username: username,
+                    displayName: screenName,
                     created: Date.now(),
                     active: true
                 });
                 
                 document.getElementById('newUsername').value = '';
-                showStatus(`User "${username}" added successfully!`, "success");
+                document.getElementById('newScreenName').value = '';
+                showStatus(`User "${screenName}" added successfully!`, "success");
                 setTimeout(() => showStatus("", ""), 2000);
                 
                 await loadUserList();
