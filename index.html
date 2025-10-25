@@ -1048,7 +1048,10 @@
             const week = parseInt(document.getElementById('weekSelect').value);
             showStatus("Loading games...", "info");
             
-            // Fetch games from ESPN
+            // Load user's picks FIRST
+            await loadUserPicks(week);
+            
+            // Then fetch and display games
             const games = await fetchESPNSchedule(week);
             
             if (games && games.length > 0) {
@@ -1065,9 +1068,6 @@
                     showStatus("No games found for this week", "error");
                 }
             }
-            
-            // Load user's picks
-            await loadUserPicks(week);
             
             showStatus("", "");
         }
@@ -1165,30 +1165,58 @@
             
             const userPick = picksCache[week]?.[game.id];
             
-            card.innerHTML = `
-                <div class="game-info">
-                    <div class="game-time">${game.time}</div>
-                    <div class="teams">
-                        <div class="team ${userPick === game.awayTeam ? 'selected' : ''} 
-                                    ${game.winner === game.awayTeam ? 'winner' : ''} 
-                                    ${game.winner && game.winner !== game.awayTeam ? 'loser' : ''}
-                                    ${isLocked ? 'locked' : ''}"
-                             onclick="${isLocked || isAdmin ? '' : `makePick('${game.id}', '${game.awayTeam}', ${week})`}">
-                            ${game.awayTeamFull}
-                            ${game.status === 'STATUS_FINAL' ? `<br><small>${game.awayScore}</small>` : ''}
-                        </div>
-                        <span class="vs">@</span>
-                        <div class="team ${userPick === game.homeTeam ? 'selected' : ''} 
-                                    ${game.winner === game.homeTeam ? 'winner' : ''} 
-                                    ${game.winner && game.winner !== game.homeTeam ? 'loser' : ''}
-                                    ${isLocked ? 'locked' : ''}"
-                             onclick="${isLocked || isAdmin ? '' : `makePick('${game.id}', '${game.homeTeam}', ${week})`}">
-                            ${game.homeTeamFull}
-                            ${game.status === 'STATUS_FINAL' ? `<br><small>${game.homeScore}</small>` : ''}
-                        </div>
-                    </div>
-                </div>
-            `;
+            // Create game info container
+            const gameInfo = document.createElement('div');
+            gameInfo.className = 'game-info';
+            
+            // Add game time
+            const gameTime = document.createElement('div');
+            gameTime.className = 'game-time';
+            gameTime.textContent = game.time;
+            gameInfo.appendChild(gameTime);
+            
+            // Create teams container
+            const teamsDiv = document.createElement('div');
+            teamsDiv.className = 'teams';
+            
+            // Away team
+            const awayTeam = document.createElement('div');
+            awayTeam.className = 'team';
+            if (userPick === game.awayTeam) awayTeam.classList.add('selected');
+            if (game.winner === game.awayTeam) awayTeam.classList.add('winner');
+            if (game.winner && game.winner !== game.awayTeam) awayTeam.classList.add('loser');
+            if (isLocked) awayTeam.classList.add('locked');
+            
+            awayTeam.innerHTML = game.awayTeamFull + (game.status === 'STATUS_FINAL' ? `<br><small>${game.awayScore}</small>` : '');
+            
+            if (!isLocked && !isAdmin) {
+                awayTeam.addEventListener('click', () => makePick(game.id, game.awayTeam, week));
+            }
+            
+            // VS separator
+            const vs = document.createElement('span');
+            vs.className = 'vs';
+            vs.textContent = '@';
+            
+            // Home team
+            const homeTeam = document.createElement('div');
+            homeTeam.className = 'team';
+            if (userPick === game.homeTeam) homeTeam.classList.add('selected');
+            if (game.winner === game.homeTeam) homeTeam.classList.add('winner');
+            if (game.winner && game.winner !== game.homeTeam) homeTeam.classList.add('loser');
+            if (isLocked) homeTeam.classList.add('locked');
+            
+            homeTeam.innerHTML = game.homeTeamFull + (game.status === 'STATUS_FINAL' ? `<br><small>${game.homeScore}</small>` : '');
+            
+            if (!isLocked && !isAdmin) {
+                homeTeam.addEventListener('click', () => makePick(game.id, game.homeTeam, week));
+            }
+            
+            teamsDiv.appendChild(awayTeam);
+            teamsDiv.appendChild(vs);
+            teamsDiv.appendChild(homeTeam);
+            gameInfo.appendChild(teamsDiv);
+            card.appendChild(gameInfo);
             
             return card;
         }
