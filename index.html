@@ -788,18 +788,19 @@
                 const users = snapshot.val() || {};
                 const userList = Object.keys(users).sort();
                 
-                // Populate login dropdown
+                // Populate login dropdown (only if it exists)
                 const usernameSelect = document.getElementById('usernameSelect');
-                usernameSelect.innerHTML = '<option value="">-- Select your username --</option>';
-                userList.forEach(username => {
-                    const option = document.createElement('option');
-                    option.value = username;
-                    // Display the original name if it exists, otherwise show the key
-                    option.textContent = users[username].displayName || username;
-                    usernameSelect.appendChild(option);
-                });
+                if (usernameSelect) {
+                    usernameSelect.innerHTML = '<option value="">-- Select your username --</option>';
+                    userList.forEach(username => {
+                        const option = document.createElement('option');
+                        option.value = username;
+                        option.textContent = users[username].displayName || username;
+                        usernameSelect.appendChild(option);
+                    });
+                }
                 
-                // Populate admin user select
+                // Populate admin user select (only if it exists)
                 const adminUserSelect = document.getElementById('adminUserSelect');
                 if (adminUserSelect) {
                     adminUserSelect.innerHTML = '<option value="">-- Select user --</option>';
