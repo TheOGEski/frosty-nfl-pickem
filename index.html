@@ -1379,12 +1379,18 @@
         async function loadTiebreaker(week) {
             if (!currentUser || !db) return;
             
+            // Clear the field first
+            const tiebreakerInput = document.getElementById('tiebreakerInput');
+            if (tiebreakerInput) {
+                tiebreakerInput.value = '';
+            }
+            
             try {
                 const snapshot = await db.ref(`tiebreakers/${currentUser}/week${week}`).once('value');
                 const data = snapshot.val();
                 
                 if (data && data.score) {
-                    document.getElementById('tiebreakerInput').value = data.score;
+                    tiebreakerInput.value = data.score;
                 }
             } catch (error) {
                 console.error("Error loading tiebreaker:", error);
@@ -1635,7 +1641,7 @@
             }
         }
 
-        function displayStandings(standings) {
+        async function displayStandings(standings) {
             const container = document.getElementById('standingsContainer');
             
             if (standings.length === 0) {
@@ -1643,12 +1649,16 @@
                 return;
             }
             
+            // Get user display names
+            const usersSnapshot = await db.ref('users').once('value');
+            const users = usersSnapshot.val() || {};
+            
             let html = `
                 <table class="standings-table">
                     <thead>
                         <tr>
                             <th>Rank</th>
-                            <th>Username</th>
+                            <th>Player</th>
                             <th>Correct Picks</th>
                             <th>Total Games</th>
                             <th>Win %</th>
@@ -1661,10 +1671,13 @@
                 const winPercent = user.totalGames > 0 ? 
                     ((user.totalCorrect / user.totalGames) * 100).toFixed(1) : '0.0';
                 
+                // Get display name from users table, fallback to username
+                const displayName = users[user.username]?.displayName || user.username;
+                
                 html += `
                     <tr>
                         <td class="rank">${index + 1}</td>
-                        <td>${user.username}</td>
+                        <td>${displayName}</td>
                         <td>${user.totalCorrect}</td>
                         <td>${user.totalGames}</td>
                         <td>${winPercent}%</td>
