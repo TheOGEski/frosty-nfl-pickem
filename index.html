@@ -526,7 +526,7 @@
             <h2>Welcome!</h2>
             <div class="input-group">
                 <label for="usernameInput">Enter Your Username</label>
-                <input type="text" id="usernameInput" placeholder="Your username or email" autocomplete="off" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                <input type="text" id="usernameInput" placeholder="Your username or email" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;" onkeypress="if(event.key==='Enter') login()">
             </div>
             <button class="btn" onclick="login()">Enter</button>
             <button class="btn btn-secondary" onclick="showAdminLogin()">Admin Login</button>
