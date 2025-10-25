@@ -624,6 +624,12 @@
                             <label style="font-size: 18px; color: #002244;">Screen Name (public display)</label>
                             <input type="text" id="newScreenName" placeholder="Name shown on dashboard" style="font-size: 18px; padding: 15px;">
                             <small style="color: #666; margin-top: 5px; display: block;">This will be shown on dashboards and standings</small>
+                            <div style="margin-top: 10px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="useSameAsUsername" onchange="toggleScreenName()" style="width: auto; cursor: pointer;">
+                                    <span style="font-size: 14px; color: #666;">Use username as screen name</span>
+                                </label>
+                            </div>
                         </div>
                         <button class="btn btn-success" onclick="addUser()" style="font-size: 18px; padding: 16px 40px; width: 100%;">➕ Add User</button>
                         
@@ -876,9 +882,11 @@
                 let html = '<div style="display: flex; flex-wrap: wrap; gap: 10px;">';
                 userList.forEach(username => {
                     const displayName = users[username].displayName || username;
+                    const originalUsername = users[username].username || username;
                     html += `
                         <div style="background: white; padding: 10px 15px; border-radius: 6px; display: flex; align-items: center; gap: 10px;">
                             <span style="font-weight: 600;">${displayName}</span>
+                            <button onclick="editUser('${username}', '${originalUsername.replace(/'/g, "\\'")}', '${displayName.replace(/'/g, "\\'")}')" style="background: #007bff; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Edit</button>
                             <button onclick="deleteUser('${username}')" style="background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button>
                         </div>
                     `;
@@ -914,6 +922,18 @@
                 console.error("Error deleting user:", error);
                 showStatus("Error deleting user", "error");
             }
+        }
+
+        function editUser(sanitizedKey, originalUsername, currentScreenName) {
+            // Populate the form with current values
+            document.getElementById('newUsername').value = originalUsername;
+            document.getElementById('newScreenName').value = currentScreenName;
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            // Show message
+            showStatus(`Editing user: ${currentScreenName}. Update the fields and click "Add User" to save changes. Note: This will create a new user if you change the username.`, "info");
         }
 
         // ============================================
@@ -1829,6 +1849,21 @@
         // ============================================
         // UTILITY FUNCTIONS
         // ============================================
+        function toggleScreenName() {
+            const checkbox = document.getElementById('useSameAsUsername');
+            const usernameInput = document.getElementById('newUsername');
+            const screenNameInput = document.getElementById('newScreenName');
+            
+            if (checkbox.checked) {
+                screenNameInput.value = usernameInput.value;
+                screenNameInput.disabled = true;
+                screenNameInput.style.opacity = '0.6';
+            } else {
+                screenNameInput.disabled = false;
+                screenNameInput.style.opacity = '1';
+            }
+        }
+
         function showStatus(message, type) {
             const statusDiv = document.getElementById('statusMessage');
             
