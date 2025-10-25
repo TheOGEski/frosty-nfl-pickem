@@ -631,7 +631,8 @@
                                 </label>
                             </div>
                         </div>
-                        <button class="btn btn-success" onclick="addUser()" style="font-size: 18px; padding: 16px 40px; width: 100%;">➕ Add User</button>
+                        <button class="btn btn-success" id="addUserBtn" onclick="addOrUpdateUser()" style="font-size: 18px; padding: 16px 40px; width: 100%;">➕ Add User</button>
+                        <button class="btn btn-secondary" id="cancelEditBtn" onclick="cancelEdit()" style="font-size: 18px; padding: 16px 40px; width: 100%; margin-top: 10px; display: none;">Cancel Edit</button>
                         
                         <div id="userListContainer" style="margin-top: 30px;">
                             <h4 style="color: #002244; font-size: 1.3em; margin-bottom: 15px;">Current Users:</h4>
@@ -709,6 +710,7 @@
         let gamesCache = {};
         let picksCache = {};
         let autoRefreshInterval = null;
+        let editingUser = null; // Track which user is being edited
 
         // ============================================
         // FIREBASE INITIALIZATION
@@ -816,7 +818,7 @@
             }
         }
 
-        async function addUser() {
+        async function addOrUpdateUser() {
             const username = document.getElementById('newUsername').value.trim();
             const screenName = document.getElementById('newScreenName').value.trim();
             
@@ -843,24 +845,78 @@
                                               .replace(/\]/g, '_rbracket_');
             
             try {
-                await db.ref(`users/${sanitizedUsername}`).set({
-                    username: username,
-                    displayName: screenName,
-                    created: Date.now(),
-                    active: true
-                });
+                if (editingUser && editingUser !== sanitizedUsername) {
+                    // Username changed - need to move data to new key
+                    const snapshot = await db.ref(`users/${editingUser}`).once('value');
+                    const userData = snapshot.val();
+                    
+                    // Get picks and tiebreakers
+                    const picksSnapshot = await db.ref(`picks/${editingUser}`).once('value');
+                    const picks = picksSnapshot.val();
+                    
+                    const tiebreakerSnapshot = await db.ref(`tiebreakers/${editingUser}`).once('value');
+                    const tiebreakers = tiebreakerSnapshot.val();
+                    
+                    // Create new user with data
+                    const updates = {};
+                    updates[`users/${sanitizedUsername}`] = {
+                        username: username,
+                        displayName: screenName,
+                        created: userData?.created || Date.now(),
+                        active: true
+                    };
+                    
+                    if (picks) updates[`picks/${sanitizedUsername}`] = picks;
+                    if (tiebreakers) updates[`tiebreakers/${sanitizedUsername}`] = tiebreakers;
+                    
+                    // Delete old user
+                    updates[`users/${editingUser}`] = null;
+                    updates[`picks/${editingUser}`] = null;
+                    updates[`tiebreakers/${editingUser}`] = null;
+                    
+                    await db.ref().update(updates);
+                    showStatus(`User updated successfully!`, "success");
+                } else {
+                    // Just update the existing user
+                    await db.ref(`users/${editingUser || sanitizedUsername}`).update({
+                        username: username,
+                        displayName: screenName
+                    });
+                    showStatus(`User "${screenName}" ${editingUser ? 'updated' : 'added'} successfully!`, "success");
+                }
                 
+                // Reset form
                 document.getElementById('newUsername').value = '';
                 document.getElementById('newScreenName').value = '';
-                showStatus(`User "${screenName}" added successfully!`, "success");
+                document.getElementById('useSameAsUsername').checked = false;
+                document.getElementById('newScreenName').disabled = false;
+                document.getElementById('newScreenName').style.opacity = '1';
+                
+                // Reset edit mode
+                editingUser = null;
+                document.getElementById('addUserBtn').innerHTML = '➕ Add User';
+                document.getElementById('cancelEditBtn').style.display = 'none';
+                
                 setTimeout(() => showStatus("", ""), 2000);
                 
                 await loadUserList();
                 await loadUsers();
             } catch (error) {
-                console.error("Error adding user:", error);
-                showStatus("Error adding user - " + error.message, "error");
+                console.error("Error saving user:", error);
+                showStatus("Error saving user - " + error.message, "error");
             }
+        }
+
+        function cancelEdit() {
+            editingUser = null;
+            document.getElementById('newUsername').value = '';
+            document.getElementById('newScreenName').value = '';
+            document.getElementById('useSameAsUsername').checked = false;
+            document.getElementById('newScreenName').disabled = false;
+            document.getElementById('newScreenName').style.opacity = '1';
+            document.getElementById('addUserBtn').innerHTML = '➕ Add User';
+            document.getElementById('cancelEditBtn').style.display = 'none';
+            showStatus("", "");
         }
 
         async function loadUserList() {
@@ -925,15 +981,22 @@
         }
 
         function editUser(sanitizedKey, originalUsername, currentScreenName) {
+            // Set edit mode
+            editingUser = sanitizedKey;
+            
             // Populate the form with current values
             document.getElementById('newUsername').value = originalUsername;
             document.getElementById('newScreenName').value = currentScreenName;
+            
+            // Change button to Save
+            document.getElementById('addUserBtn').innerHTML = '💾 Save Changes';
+            document.getElementById('cancelEditBtn').style.display = 'block';
             
             // Scroll to top
             window.scrollTo({ top: 0, behavior: 'smooth' });
             
             // Show message
-            showStatus(`Editing user: ${currentScreenName}. Update the fields and click "Add User" to save changes. Note: This will create a new user if you change the username.`, "info");
+            showStatus(`Editing user: ${currentScreenName}. Make changes and click "Save Changes".`, "info");
         }
 
         // ============================================
