@@ -1662,10 +1662,29 @@
                             Object.keys(users).forEach(username => {
                                 const userPick = allPicks[username]?.[`week${week}`]?.[game.id]?.team;
                                 const displayName = users[username].displayName || username;
-                                const isCorrect = userPick === game.winner;
+                                
+                                // Check if pick matches winner - handle both abbreviations and full names
+                                let isCorrect = false;
+                                if (userPick && game.winner) {
+                                    // Direct abbreviation match
+                                    isCorrect = userPick === game.winner;
+                                    // Also check if pick is full name matching winner's full name
+                                    if (!isCorrect) {
+                                        const winnerFullName = game.winner === game.awayTeam ? game.awayTeamFull : game.homeTeamFull;
+                                        isCorrect = userPick === winnerFullName;
+                                    }
+                                }
                                 
                                 if (userPick) {
-                                    const pickTeam = userPick === game.awayTeam ? game.awayTeamFull : game.homeTeamFull;
+                                    // Display the team name - handle both abbreviation and full name picks
+                                    let pickTeam = userPick;
+                                    if (userPick === game.awayTeam) {
+                                        pickTeam = game.awayTeamFull;
+                                    } else if (userPick === game.homeTeam) {
+                                        pickTeam = game.homeTeamFull;
+                                    }
+                                    // If pick is already a full name, use it as-is
+                                    
                                     html += `<div style="padding: 8px 12px; background: ${isCorrect ? 'rgba(105, 190, 40, 0.2)' : 'rgba(220, 53, 69, 0.1)'}; border-radius: 6px; border-left: 3px solid ${isCorrect ? '#69BE28' : '#dc3545'};">`;
                                     html += `<div style="font-weight: 600; font-size: 0.9em;">${displayName}</div>`;
                                     html += `<div style="font-size: 0.85em; color: #666;">${pickTeam} ${isCorrect ? '✓' : '✗'}</div></div>`;
@@ -1733,7 +1752,15 @@
                                 
                                 if (hasStarted && game.winner) {
                                     weekTotal++;
-                                    if (pick === game.winner) {
+                                    
+                                    // Check if pick matches winner - handle both abbreviations and full names
+                                    let isCorrect = pick === game.winner;
+                                    if (!isCorrect) {
+                                        const winnerFullName = game.winner === game.awayTeam ? game.awayTeamFull : game.homeTeamFull;
+                                        isCorrect = pick === winnerFullName;
+                                    }
+                                    
+                                    if (isCorrect) {
                                         weekCorrect++;
                                     }
                                 }
