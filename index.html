@@ -749,7 +749,20 @@
         // ============================================
         let currentUser = null;
         let isAdmin = false;
-        let currentWeek = 8; // Current week of 2025 season
+        // Calculate current week based on date
+        // NFL 2025 season starts September 4, 2025 (Week 1)
+        function getCurrentNFLWeek() {
+            const seasonStart = new Date('2025-09-04'); // Week 1 starts
+            const now = new Date();
+            const diffTime = now - seasonStart;
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            const week = Math.floor(diffDays / 7) + 1;
+            
+            // Clamp between 1 and 18
+            return Math.max(1, Math.min(18, week));
+        }
+        
+        let currentWeek = getCurrentNFLWeek(); // Auto-calculate current week
         let db = null;
         let gamesCache = {};
         let picksCache = {};
@@ -800,8 +813,13 @@
                 const gameDate = new Date(event.date);
                 const dayOfWeek = gameDate.toLocaleDateString('en-US', { weekday: 'long' });
                 
+                // Use team-based ID for consistency (prevents ESPN ordering issues)
+                const stableId = `week${week}_${awayTeam.team.abbreviation}_at_${homeTeam.team.abbreviation}`;
+                const legacyId = `week${week}_game${index + 1}`;
+                
                 games.push({
-                    id: `week${week}_game${index + 1}`,
+                    id: stableId,
+                    legacyId: legacyId, // Keep for backwards compatibility
                     week: week,
                     homeTeam: homeTeam.team.abbreviation,
                     awayTeam: awayTeam.team.abbreviation,
@@ -1400,7 +1418,7 @@
             awayTeam.innerHTML = game.awayTeamFull + (game.status === 'STATUS_FINAL' ? `<br><small>${game.awayScore}</small>` : '');
             
             if (!isLocked && !isAdmin) {
-                awayTeam.addEventListener('click', () => makePick(game.id, game.awayTeam, week));
+                awayTeam.addEventListener('click', () => makePick(game.id, game.awayTeamFull, week));
             }
             
             // VS separator
@@ -1419,7 +1437,7 @@
             homeTeam.innerHTML = game.homeTeamFull + (game.status === 'STATUS_FINAL' ? `<br><small>${game.homeScore}</small>` : '');
             
             if (!isLocked && !isAdmin) {
-                homeTeam.addEventListener('click', () => makePick(game.id, game.homeTeam, week));
+                homeTeam.addEventListener('click', () => makePick(game.id, game.homeTeamFull, week));
             }
             
             teamsDiv.appendChild(awayTeam);
@@ -1468,6 +1486,16 @@
                 if (data) {
                     Object.keys(data).forEach(gameId => {
                         picksCache[week][gameId] = data[gameId].team;
+                    });
+                }
+                
+                // Also check if games are loaded and map legacy picks to new IDs
+                if (gamesCache[week]) {
+                    gamesCache[week].forEach(game => {
+                        // If pick exists with legacy ID but not new ID, copy it
+                        if (game.legacyId && data?.[game.legacyId] && !picksCache[week][game.id]) {
+                            picksCache[week][game.id] = data[game.legacyId].team;
+                        }
                     });
                 }
             } catch (error) {
@@ -1678,12 +1706,22 @@
                                 if (userPick) {
                                     // Display the team name - handle both abbreviation and full name picks
                                     let pickTeam = userPick;
+                                    
+                                    // Check if pick is an abbreviation that matches away or home team
                                     if (userPick === game.awayTeam) {
                                         pickTeam = game.awayTeamFull;
                                     } else if (userPick === game.homeTeam) {
                                         pickTeam = game.homeTeamFull;
+                                    } else if (userPick === game.awayTeamFull) {
+                                        // Pick is already full name for away team
+                                        pickTeam = game.awayTeamFull;
+                                    } else if (userPick === game.homeTeamFull) {
+                                        // Pick is already full name for home team
+                                        pickTeam = game.homeTeamFull;
+                                    } else {
+                                        // Pick doesn't match - might be old data, display as-is
+                                        pickTeam = userPick;
                                     }
-                                    // If pick is already a full name, use it as-is
                                     
                                     html += `<div style="padding: 8px 12px; background: ${isCorrect ? 'rgba(105, 190, 40, 0.2)' : 'rgba(220, 53, 69, 0.1)'}; border-radius: 6px; border-left: 3px solid ${isCorrect ? '#69BE28' : '#dc3545'};">`;
                                     html += `<div style="font-weight: 600; font-size: 0.9em;">${displayName}</div>`;
@@ -1888,33 +1926,49 @@
                 console.error("Error loading existing picks:", error);
             }
             
+            // Sort games by date/time
+            weekGames.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
             // Display admin pick entry form
             const container = document.getElementById('adminPicksContainer');
             container.classList.remove('hidden');
             
             let html = `<h4>Enter picks for ${username} - Week ${week}</h4>`;
             
+            // Group by day for better organization
+            const gamesByDay = {};
             weekGames.forEach(game => {
-                const currentPick = existingPicks[game.id];
-                
-                html += `
-                    <div class="user-pick-entry">
-                        <p><strong>${game.awayTeamFull} @ ${game.homeTeamFull}</strong></p>
-                        <p style="font-size: 14px; color: #666;">${game.time}</p>
-                        <div style="margin-top: 10px;">
-                            <label>
-                                <input type="radio" name="admin_${game.id}" value="${game.awayTeam}" 
-                                    ${currentPick === game.awayTeam ? 'checked' : ''}>
-                                ${game.awayTeamFull}
-                            </label>
-                            <label style="margin-left: 20px;">
-                                <input type="radio" name="admin_${game.id}" value="${game.homeTeam}"
-                                    ${currentPick === game.homeTeam ? 'checked' : ''}>
-                                ${game.homeTeamFull}
-                            </label>
-                        </div>
-                    </div>
-                `;
+                const day = game.dayOfWeek;
+                if (!gamesByDay[day]) gamesByDay[day] = [];
+                gamesByDay[day].push(game);
+            });
+            
+            // Display in order: Thursday, Sunday, Monday
+            ['Thursday', 'Sunday', 'Monday'].forEach(day => {
+                if (gamesByDay[day]) {
+                    html += `<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #69BE28; padding-bottom: 5px;">${day}</h5>`;
+                    gamesByDay[day].forEach(game => {
+                        const currentPick = existingPicks[game.id];
+                        html += `
+                            <div class="user-pick-entry">
+                                <p><strong>${game.awayTeamFull} @ ${game.homeTeamFull}</strong></p>
+                                <p style="font-size: 14px; color: #666;">${game.time}</p>
+                                <div style="margin-top: 10px;">
+                                    <label>
+                                        <input type="radio" name="admin_${game.id}" value="${game.awayTeamFull}" 
+                                            ${currentPick === game.awayTeam || currentPick === game.awayTeamFull ? 'checked' : ''}>
+                                        ${game.awayTeamFull}
+                                    </label>
+                                    <label style="margin-left: 20px;">
+                                        <input type="radio" name="admin_${game.id}" value="${game.homeTeamFull}"
+                                            ${currentPick === game.homeTeam || currentPick === game.homeTeamFull ? 'checked' : ''}>
+                                        ${game.homeTeamFull}
+                                    </label>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
             });
             
             html += `
