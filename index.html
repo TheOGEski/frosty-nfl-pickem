@@ -1871,6 +1871,10 @@
             const usersSnapshot = await db.ref('users').once('value');
             const users = usersSnapshot.val() || {};
             
+            // Get all games for weekly winners calculation
+            const scheduleSnapshot = await db.ref('schedule').once('value');
+            const allGames = scheduleSnapshot.val() || {};
+            
             // Get most recent completed week
             const completedWeek = await getMostRecentCompletedWeek();
             
