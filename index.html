@@ -1833,6 +1833,32 @@
             }
         }
 
+        // Find most recent completed week
+        async function getMostRecentCompletedWeek() {
+            try {
+                const scheduleSnapshot = await db.ref('schedule').once('value');
+                const allGames = scheduleSnapshot.val() || {};
+                const now = new Date();
+                
+                // Check weeks in reverse order
+                for (let week = currentWeek; week >= 1; week--) {
+                    const weekGames = allGames[`week${week}`];
+                    if (weekGames) {
+                        const games = Object.values(weekGames);
+                        // Check if ALL games in this week are completed
+                        const allCompleted = games.every(game => game.status === 'STATUS_FINAL');
+                        if (allCompleted && games.length > 0) {
+                            return week;
+                        }
+                    }
+                }
+                return 1; // Default to week 1 if nothing found
+            } catch (error) {
+                console.error("Error finding completed week:", error);
+                return currentWeek - 1; // Fallback to previous week
+            }
+        }
+
         async function displayStandings(standings) {
             const container = document.getElementById('standingsContainer');
             
@@ -1845,34 +1871,85 @@
             const usersSnapshot = await db.ref('users').once('value');
             const users = usersSnapshot.val() || {};
             
+            // Get most recent completed week
+            const completedWeek = await getMostRecentCompletedWeek();
+            
             let html = `
+                <div class="week-selector" style="margin-bottom: 30px;">
+                    <label for="standingsWeekSelect"><strong>View Week:</strong></label>
+                    <select id="standingsWeekSelect" onchange="loadStandings()" style="padding: 10px 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+            `;
+            
+            for (let i = 1; i <= currentWeek; i++) {
+                html += `<option value="${i}" ${i === completedWeek ? 'selected' : ''}>Week ${i}</option>`;
+            }
+            
+            html += `
+                    </select>
+                </div>
+            `;
+            
+            // Get selected week or use completed week
+            const selectedWeek = document.getElementById('standingsWeekSelect')?.value || completedWeek;
+            
+            // Weekly breakdown
+            html += `<h3 style="color: #002244; margin-bottom: 15px;">Week ${selectedWeek} Results</h3>`;
+            html += `
                 <table class="standings-table">
                     <thead>
                         <tr>
                             <th>Rank</th>
                             <th>Player</th>
                             <th>Correct Picks</th>
-                            <th>Total Games</th>
-                            <th>Win %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            // Sort by week performance
+            const weekStandings = standings.map(user => ({
+                ...user,
+                weekCorrect: user.weeklyScores[selectedWeek]?.correct || 0,
+                weekTotal: user.weeklyScores[selectedWeek]?.total || 0
+            })).sort((a, b) => b.weekCorrect - a.weekCorrect);
+            
+            weekStandings.forEach((user, index) => {
+                const displayName = users[user.username]?.displayName || user.username;
+                html += `
+                    <tr>
+                        <td class="rank">${index + 1}</td>
+                        <td>${displayName}</td>
+                        <td>${user.weekCorrect}/${user.weekTotal}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            // Overall standings
+            html += `<h3 style="color: #002244; margin-top: 40px; margin-bottom: 15px;">Overall Standings (All Weeks)</h3>`;
+            html += `
+                <table class="standings-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Player</th>
+                            <th>Total Correct</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
             
             standings.forEach((user, index) => {
-                const winPercent = user.totalGames > 0 ? 
-                    ((user.totalCorrect / user.totalGames) * 100).toFixed(1) : '0.0';
-                
-                // Get display name from users table, fallback to username
                 const displayName = users[user.username]?.displayName || user.username;
-                
                 html += `
                     <tr>
                         <td class="rank">${index + 1}</td>
                         <td>${displayName}</td>
                         <td>${user.totalCorrect}</td>
-                        <td>${user.totalGames}</td>
-                        <td>${winPercent}%</td>
                     </tr>
                 `;
             });
@@ -2042,24 +2119,61 @@
             container.innerHTML = '<div class="loading">Loading all picks</div>';
             
             try {
-                const snapshot = await db.ref('picks').once('value');
-                const allPicks = snapshot.val() || {};
+                const picksSnapshot = await db.ref('picks').once('value');
+                const allPicks = picksSnapshot.val() || {};
+                
+                const scheduleSnapshot = await db.ref('schedule').once('value');
+                const allGames = scheduleSnapshot.val() || {};
+                
+                const usersSnapshot = await db.ref('users').once('value');
+                const users = usersSnapshot.val() || {};
                 
                 let html = '<div style="margin-top: 20px;">';
                 
-                Object.keys(allPicks).forEach(username => {
-                    html += `<h4>${username}</h4>`;
+                Object.keys(allPicks).sort().forEach(username => {
+                    const displayName = users[username]?.displayName || username;
+                    html += `<h4 style="color: #002244; margin-top: 20px;">${displayName}</h4>`;
                     
-                    Object.keys(allPicks[username]).forEach(weekKey => {
+                    Object.keys(allPicks[username]).sort().forEach(weekKey => {
                         const week = weekKey.replace('week', '');
                         const picks = allPicks[username][weekKey];
+                        const weekGames = allGames[weekKey] || {};
                         
-                        html += `<p><strong>Week ${week}:</strong> `;
                         const pickCount = Object.keys(picks).length;
-                        html += `${pickCount} picks made</p>`;
+                        html += `<p style="margin-top: 10px;"><strong>Week ${week}:</strong> ${pickCount} picks made</p>`;
+                        html += '<div style="margin-left: 20px; display: flex; flex-wrap: wrap; gap: 8px;">';
+                        
+                        Object.keys(picks).forEach(gameId => {
+                            const pick = picks[gameId].team;
+                            const game = weekGames[gameId];
+                            
+                            if (game && game.winner) {
+                                // Check if pick is correct
+                                let isCorrect = pick === game.winner;
+                                if (!isCorrect) {
+                                    const winnerFullName = game.winner === game.awayTeam ? game.awayTeamFull : game.homeTeamFull;
+                                    isCorrect = pick === winnerFullName;
+                                }
+                                
+                                // Display team name
+                                let teamName = pick;
+                                if (pick === game.awayTeam) teamName = game.awayTeamFull;
+                                else if (pick === game.homeTeam) teamName = game.homeTeamFull;
+                                
+                                html += `<span style="padding: 4px 8px; background: ${isCorrect ? '#d4edda' : '#f8d7da'}; border-radius: 4px; font-size: 13px;">${isCorrect ? '✓' : '✗'} ${teamName}</span>`;
+                            } else if (game) {
+                                // Game not finished yet
+                                let teamName = pick;
+                                if (pick === game.awayTeam) teamName = game.awayTeamFull;
+                                else if (pick === game.homeTeam) teamName = game.homeTeamFull;
+                                html += `<span style="padding: 4px 8px; background: #e9ecef; border-radius: 4px; font-size: 13px;">⏳ ${teamName}</span>`;
+                            }
+                        });
+                        
+                        html += '</div>';
                     });
                     
-                    html += '<hr>';
+                    html += '<hr style="margin: 20px 0;">';
                 });
                 
                 html += '</div>';
