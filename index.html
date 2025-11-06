@@ -1929,8 +1929,62 @@
                 </table>
             `;
             
+            // Weekly Winners section
+            html += `<h3 style="color: #002244; margin-top: 40px; margin-bottom: 15px;">🏆 Weekly Winners</h3>`;
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 30px;">';
+            
+            // Get tiebreakers
+            const tiebreakersSnapshot = await db.ref('tiebreakers').once('value');
+            const allTiebreakers = tiebreakersSnapshot.val() || {};
+            
+            // Calculate weekly winners
+            for (let week = 1; week <= currentWeek; week++) {
+                const weekData = standings.map(user => ({
+                    username: user.username,
+                    displayName: users[user.username]?.displayName || user.username,
+                    correct: user.weeklyScores[week]?.correct || 0,
+                    total: user.weeklyScores[week]?.total || 0,
+                    tiebreaker: allTiebreakers[user.username]?.[`week${week}`]?.score
+                })).filter(u => u.total > 0);
+                
+                if (weekData.length > 0) {
+                    // Find max correct
+                    const maxCorrect = Math.max(...weekData.map(u => u.correct));
+                    let winners = weekData.filter(u => u.correct === maxCorrect);
+                    
+                    // If tie, use tiebreaker
+                    if (winners.length > 1) {
+                        // Get Monday Night game final score for this week
+                        const weekGames = allGames[`week${week}`];
+                        if (weekGames) {
+                            const mondayGames = Object.values(weekGames).filter(g => 
+                                g.dayOfWeek && g.dayOfWeek.includes('Mon') && g.status === 'STATUS_FINAL'
+                            );
+                            if (mondayGames.length > 0) {
+                                const actualTotal = mondayGames.reduce((sum, g) => sum + g.homeScore + g.awayScore, 0);
+                                winners = winners.sort((a, b) => {
+                                    const aDiff = a.tiebreaker ? Math.abs(a.tiebreaker - actualTotal) : 999;
+                                    const bDiff = b.tiebreaker ? Math.abs(b.tiebreaker - actualTotal) : 999;
+                                    return aDiff - bDiff;
+                                });
+                                winners = [winners[0]]; // Take closest
+                            }
+                        }
+                    }
+                    
+                    const winner = winners[0];
+                    html += `<div style="background: rgba(105, 190, 40, 0.1); padding: 12px; border-radius: 6px; border-left: 3px solid #69BE28;">`;
+                    html += `<div style="font-weight: 700; color: #002244;">Week ${week}</div>`;
+                    html += `<div style="font-size: 14px; color: #666;">${winner.displayName}</div>`;
+                    html += `<div style="font-size: 13px; color: #69BE28;">${winner.correct}/${winner.total} correct</div>`;
+                    html += `</div>`;
+                }
+            }
+            
+            html += '</div>';
+            
             // Overall standings
-            html += `<h3 style="color: #002244; margin-top: 40px; margin-bottom: 15px;">Overall Standings (All Weeks)</h3>`;
+            html += `<h3 style="color: #002244; margin-top: 20px; margin-bottom: 15px;">Overall Standings (All Weeks)</h3>`;
             html += `
                 <table class="standings-table">
                     <thead>
