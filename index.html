@@ -1660,8 +1660,23 @@
                     
                     const userPicks = allPicks[currentUser]?.[`week${week}`] || {};
                     games.forEach(game => {
-                        const pick = userPicks[game.id]?.team;
-                        const pickTeam = pick ? (pick === game.awayTeam ? game.awayTeamFull : game.homeTeamFull) : 'Not selected';
+                        // Check both new ID and legacy ID
+                        let pick = userPicks[game.id]?.team;
+                        if (!pick && game.legacyId) {
+                            pick = userPicks[game.legacyId]?.team;
+                        }
+                        
+                        // Convert abbreviation to full name if needed
+                        let pickTeam = 'Not selected';
+                        if (pick) {
+                            if (pick === game.awayTeam || pick === game.awayTeamFull) {
+                                pickTeam = game.awayTeamFull;
+                            } else if (pick === game.homeTeam || pick === game.homeTeamFull) {
+                                pickTeam = game.homeTeamFull;
+                            } else {
+                                pickTeam = pick; // Unknown pick
+                            }
+                        }
                         html += `
                             <div class="game-card">
                                 <div class="game-info">
