@@ -1410,7 +1410,7 @@
             // Away team
             const awayTeam = document.createElement('div');
             awayTeam.className = 'team';
-            if (userPick === game.awayTeam) awayTeam.classList.add('selected');
+            if (userPick === game.awayTeam || userPick === game.awayTeamFull) awayTeam.classList.add('selected');
             if (game.winner === game.awayTeam) awayTeam.classList.add('winner');
             if (game.winner && game.winner !== game.awayTeam) awayTeam.classList.add('loser');
             if (isLocked) awayTeam.classList.add('locked');
@@ -1429,7 +1429,7 @@
             // Home team
             const homeTeam = document.createElement('div');
             homeTeam.className = 'team';
-            if (userPick === game.homeTeam) homeTeam.classList.add('selected');
+            if (userPick === game.homeTeam || userPick === game.homeTeamFull) homeTeam.classList.add('selected');
             if (game.winner === game.homeTeam) homeTeam.classList.add('winner');
             if (game.winner && game.winner !== game.homeTeam) homeTeam.classList.add('loser');
             if (isLocked) homeTeam.classList.add('locked');
@@ -1894,36 +1894,170 @@
             `;
             
             // Get selected week or use completed week
-            const selectedWeek = document.getElementById('standingsWeekSelect')?.value || completedWeek;
+            const selectedWeek = parseInt(document.getElementById('standingsWeekSelect')?.value || completedWeek);
             
-            // Weekly breakdown
+            // Get tiebreakers for weekly display
+            const tiebreakersSnapshot = await db.ref('tiebreakers').once('value');
+            const allTiebreakers = tiebreakersSnapshot.val() || {};
+            
+            // Get Monday Night game for this week
+            const weekGames = allGames[`week${selectedWeek}`];
+            let mondayNightTotal = null;
+            let mondayNightGame = null;
+            if (weekGames) {
+                const mondayGames = Object.values(weekGames).filter(g => 
+                    g.dayOfWeek && g.dayOfWeek.includes('Mon') && g.status === 'STATUS_FINAL'
+                );
+                if (mondayGames.length > 0) {
+                    mondayNightGame = mondayGames[0];
+                    mondayNightTotal = mondayGames.reduce((sum, g) => sum + parseInt(g.homeScore) + parseInt(g.awayScore), 0);
+                }
+            }
+            
+            // Weekly Winners section - MOVED TO TOP
+            html += `<h3 style="color: #002244; margin-bottom: 15px;">🏆 Weekly Winners</h3>`;
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 30px;">';
+            
+            // Calculate weekly winners with corrected parseInt
+            for (let week = 1; week <= currentWeek; week++) {
+                const weekData = standings.map(user => ({
+                    username: user.username,
+                    displayName: users[user.username]?.displayName || user.username,
+                    correct: user.weeklyScores[week]?.correct || 0,
+                    total: user.weeklyScores[week]?.total || 0,
+                    tiebreaker: allTiebreakers[user.username]?.[`week${week}`]?.score
+                })).filter(u => u.total > 0);
+                
+                if (weekData.length > 0) {
+                    // Find max correct
+                    const maxCorrect = Math.max(...weekData.map(u => u.correct));
+                    let winners = weekData.filter(u => u.correct === maxCorrect);
+                    
+                    // If tie, use tiebreaker
+                    if (winners.length > 1) {
+                        const weekGamesForWinner = allGames[`week${week}`];
+                        if (weekGamesForWinner) {
+                            const mondayGames = Object.values(weekGamesForWinner).filter(g => 
+                                g.dayOfWeek && g.dayOfWeek.includes('Mon') && g.status === 'STATUS_FINAL'
+                            );
+                            if (mondayGames.length > 0) {
+                                const actualTotal = mondayGames.reduce((sum, g) => sum + parseInt(g.homeScore) + parseInt(g.awayScore), 0);
+                                winners = winners.sort((a, b) => {
+                                    const aDiff = a.tiebreaker ? Math.abs(a.tiebreaker - actualTotal) : 999;
+                                    const bDiff = b.tiebreaker ? Math.abs(b.tiebreaker - actualTotal) : 999;
+                                    return aDiff - bDiff;
+                                });
+                                // Check for exact tie on tiebreaker
+                                const minDiff = winners[0].tiebreaker ? Math.abs(winners[0].tiebreaker - actualTotal) : 999;
+                                winners = winners.filter(w => {
+                                    const wDiff = w.tiebreaker ? Math.abs(w.tiebreaker - actualTotal) : 999;
+                                    return wDiff === minDiff;
+                                });
+                            }
+                        }
+                    }
+                    
+                    // Display winner(s)
+                    const winnerNames = winners.map(w => w.displayName).join(' & ');
+                    html += `<div style="background: rgba(105, 190, 40, 0.1); padding: 12px; border-radius: 6px; border-left: 3px solid #69BE28;">`;
+                    html += `<div style="font-weight: 700; color: #002244;">Week ${week}</div>`;
+                    html += `<div style="font-size: 14px; color: #666;">${winnerNames}</div>`;
+                    html += `<div style="font-size: 13px; color: #69BE28;">${winners[0].correct}/${winners[0].total} correct</div>`;
+                    html += `</div>`;
+                }
+            }
+            
+            html += '</div>';
+            
+            // Weekly breakdown with tiebreaker
             html += `<h3 style="color: #002244; margin-bottom: 15px;">Week ${selectedWeek} Results</h3>`;
+            
+            // Show Monday Night result if available
+            if (mondayNightGame && mondayNightTotal !== null) {
+                html += `<div style="background: rgba(105, 190, 40, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #69BE28;">`;
+                html += `<strong>Monday Night:</strong> ${mondayNightGame.awayTeamFull} ${mondayNightGame.awayScore} @ ${mondayNightGame.homeTeamFull} ${mondayNightGame.homeScore} = <strong>${mondayNightTotal} total points</strong>`;
+                html += `</div>`;
+            }
+            
             html += `
                 <table class="standings-table">
                     <thead>
                         <tr>
                             <th>Rank</th>
                             <th>Player</th>
-                            <th>Correct Picks</th>
+                            <th>Correct</th>
+                            <th>Tiebreaker</th>
+                            <th>Result</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
             
-            // Sort by week performance
-            const weekStandings = standings.map(user => ({
-                ...user,
-                weekCorrect: user.weeklyScores[selectedWeek]?.correct || 0,
-                weekTotal: user.weeklyScores[selectedWeek]?.total || 0
-            })).sort((a, b) => b.weekCorrect - a.weekCorrect);
+            // Sort by week performance, then by tiebreaker
+            const weekStandings = standings.map(user => {
+                const weekCorrect = user.weeklyScores[selectedWeek]?.correct || 0;
+                const weekTotal = user.weeklyScores[selectedWeek]?.total || 0;
+                const tiebreaker = allTiebreakers[user.username]?.[`week${selectedWeek}`]?.score;
+                const tiebreakerDiff = (tiebreaker && mondayNightTotal !== null) ? 
+                    Math.abs(tiebreaker - mondayNightTotal) : 999;
+                
+                return {
+                    ...user,
+                    weekCorrect,
+                    weekTotal,
+                    tiebreaker,
+                    tiebreakerDiff
+                };
+            }).filter(u => u.weekTotal > 0) // Only show users who have picks for this week
+            .sort((a, b) => {
+                if (b.weekCorrect !== a.weekCorrect) return b.weekCorrect - a.weekCorrect;
+                return a.tiebreakerDiff - b.tiebreakerDiff; // Closer to actual wins
+            });
             
+            // Determine ranks with ties
+            let currentRank = 1;
             weekStandings.forEach((user, index) => {
+                if (index > 0) {
+                    const prev = weekStandings[index - 1];
+                    // Check if tied
+                    if (user.weekCorrect === prev.weekCorrect && user.tiebreakerDiff === prev.tiebreakerDiff) {
+                        // Same rank as previous (tie)
+                    } else {
+                        currentRank = index + 1;
+                    }
+                }
+                
                 const displayName = users[user.username]?.displayName || user.username;
+                const tiebreakerDisplay = user.tiebreaker || '-';
+                
+                // Determine result text
+                let resultText = '';
+                if (mondayNightTotal !== null && user.tiebreaker) {
+                    const diff = user.tiebreakerDiff;
+                    if (diff === 0) {
+                        resultText = '🎯 Exact!';
+                    } else {
+                        resultText = `${diff} pt diff`;
+                    }
+                    
+                    // Check if this is a split win
+                    const sameScore = weekStandings.filter(u => 
+                        u.weekCorrect === user.weekCorrect && u.tiebreakerDiff === user.tiebreakerDiff
+                    );
+                    if (sameScore.length > 1 && currentRank === 1) {
+                        resultText += ' (Split)';
+                    } else if (currentRank === 1) {
+                        resultText += ' ✓';
+                    }
+                }
+                
                 html += `
                     <tr>
-                        <td class="rank">${index + 1}</td>
+                        <td class="rank">${currentRank}</td>
                         <td>${displayName}</td>
                         <td>${user.weekCorrect}/${user.weekTotal}</td>
+                        <td>${tiebreakerDisplay}</td>
+                        <td style="color: ${currentRank === 1 ? '#69BE28' : '#666'}; font-weight: ${currentRank === 1 ? '700' : '400'};">${resultText}</td>
                     </tr>
                 `;
             });
@@ -1937,11 +2071,7 @@
             html += `<h3 style="color: #002244; margin-top: 40px; margin-bottom: 15px;">🏆 Weekly Winners</h3>`;
             html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 30px;">';
             
-            // Get tiebreakers
-            const tiebreakersSnapshot = await db.ref('tiebreakers').once('value');
-            const allTiebreakers = tiebreakersSnapshot.val() || {};
-            
-            // Calculate weekly winners
+            // Calculate weekly winners (allTiebreakers already loaded above)
             for (let week = 1; week <= currentWeek; week++) {
                 const weekData = standings.map(user => ({
                     username: user.username,
@@ -2213,17 +2343,29 @@
                                     isCorrect = pick === winnerFullName;
                                 }
                                 
-                                // Display team name
+                                // Display team name - always show full name
                                 let teamName = pick;
-                                if (pick === game.awayTeam) teamName = game.awayTeamFull;
-                                else if (pick === game.homeTeam) teamName = game.homeTeamFull;
+                                if (pick === game.awayTeam) {
+                                    teamName = game.awayTeamFull;
+                                } else if (pick === game.homeTeam) {
+                                    teamName = game.homeTeamFull;
+                                } else if (pick !== game.awayTeamFull && pick !== game.homeTeamFull) {
+                                    // Pick is an abbreviation or old data, try to convert
+                                    teamName = pick; // Keep as-is if can't match
+                                }
                                 
                                 html += `<span style="padding: 4px 8px; background: ${isCorrect ? '#d4edda' : '#f8d7da'}; border-radius: 4px; font-size: 13px;">${isCorrect ? '✓' : '✗'} ${teamName}</span>`;
                             } else if (game) {
-                                // Game not finished yet
+                                // Game not finished yet - always show full name
                                 let teamName = pick;
-                                if (pick === game.awayTeam) teamName = game.awayTeamFull;
-                                else if (pick === game.homeTeam) teamName = game.homeTeamFull;
+                                if (pick === game.awayTeam) {
+                                    teamName = game.awayTeamFull;
+                                } else if (pick === game.homeTeam) {
+                                    teamName = game.homeTeamFull;
+                                } else if (pick !== game.awayTeamFull && pick !== game.homeTeamFull) {
+                                    // Pick is an abbreviation or old data
+                                    teamName = pick; // Keep as-is if can't match
+                                }
                                 html += `<span style="padding: 4px 8px; background: #e9ecef; border-radius: 4px; font-size: 13px;">⏳ ${teamName}</span>`;
                             }
                         });
