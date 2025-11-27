@@ -1335,29 +1335,33 @@
             const container = document.getElementById('gamesContainer');
             container.innerHTML = '';
             
-            // Group games by day
-            const gamesByDay = {
-                'Thursday': [],
-                'Sunday': [],
-                'Monday': []
-            };
+            // Group games by day dynamically
+            const gamesByDay = {};
             
             games.forEach(game => {
-                const day = game.dayOfWeek;
-                if (gamesByDay[day]) {
-                    gamesByDay[day].push(game);
-                } else if (day.includes('Thu')) {
-                    gamesByDay['Thursday'].push(game);
-                } else if (day.includes('Sun')) {
-                    gamesByDay['Sunday'].push(game);
-                } else if (day.includes('Mon')) {
-                    gamesByDay['Monday'].push(game);
+                let day = game.dayOfWeek;
+                
+                // Normalize day names for consistency
+                if (day.includes('Thu')) day = 'Thursday';
+                else if (day.includes('Fri')) day = 'Friday';
+                else if (day.includes('Sat')) day = 'Saturday';
+                else if (day.includes('Sun')) day = 'Sunday';
+                else if (day.includes('Mon')) day = 'Monday';
+                else if (day.includes('Tue')) day = 'Tuesday';
+                else if (day.includes('Wed')) day = 'Wednesday';
+                
+                if (!gamesByDay[day]) {
+                    gamesByDay[day] = [];
                 }
+                gamesByDay[day].push(game);
             });
             
-            // Display games by day
-            ['Thursday', 'Sunday', 'Monday'].forEach(day => {
-                if (gamesByDay[day].length > 0) {
+            // Define day order for display
+            const dayOrder = ['Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday'];
+            
+            // Display games by day in order
+            dayOrder.forEach(day => {
+                if (gamesByDay[day] && gamesByDay[day].length > 0) {
                     const daySection = document.createElement('div');
                     daySection.className = 'game-day';
                     daySection.innerHTML = `<h3>${day}</h3>`;
@@ -1372,7 +1376,7 @@
             
             // Show tiebreaker section if there are Monday games
             const tiebreakerSection = document.getElementById('tiebreakerSection');
-            if (gamesByDay['Monday'].length > 0) {
+            if (gamesByDay['Monday'] && gamesByDay['Monday'].length > 0) {
                 tiebreakerSection.classList.remove('hidden');
                 loadTiebreaker(week);
             } else {
@@ -2178,14 +2182,25 @@
             // Group by day for better organization
             const gamesByDay = {};
             weekGames.forEach(game => {
-                const day = game.dayOfWeek;
+                let day = game.dayOfWeek;
+                
+                // Normalize day names for consistency
+                if (day.includes('Thu')) day = 'Thursday';
+                else if (day.includes('Fri')) day = 'Friday';
+                else if (day.includes('Sat')) day = 'Saturday';
+                else if (day.includes('Sun')) day = 'Sunday';
+                else if (day.includes('Mon')) day = 'Monday';
+                else if (day.includes('Tue')) day = 'Tuesday';
+                else if (day.includes('Wed')) day = 'Wednesday';
+                
                 if (!gamesByDay[day]) gamesByDay[day] = [];
                 gamesByDay[day].push(game);
             });
             
-            // Display in order: Thursday, Sunday, Monday
-            ['Thursday', 'Sunday', 'Monday'].forEach(day => {
-                if (gamesByDay[day]) {
+            // Display in chronological order
+            const dayOrder = ['Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday'];
+            dayOrder.forEach(day => {
+                if (gamesByDay[day] && gamesByDay[day].length > 0) {
                     html += `<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #69BE28; padding-bottom: 5px;">${day}</h5>`;
                     gamesByDay[day].forEach(game => {
                         const currentPick = existingPicks[game.id];
@@ -2391,14 +2406,15 @@
         // AUTO REFRESH
         // ============================================
         function setupAutoRefresh() {
-            // Check if today is a game day (Thursday, Sunday, or Monday during season)
+            // Check if today is a game day during season
             const now = new Date();
-            const day = now.getDay(); // 0 = Sunday, 1 = Monday, 4 = Thursday
+            const day = now.getDay(); // 0 = Sunday, 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday
             
-            const isGameDay = day === 0 || day === 1 || day === 4;
+            // Include Thursday (4), Friday (5), Saturday (6), Sunday (0), and Monday (1)
+            const isGameDay = day === 0 || day === 1 || day === 4 || day === 5 || day === 6;
             
             if (isGameDay) {
-                // Refresh every 15 minutes
+                // Refresh every 15 minutes on game days
                 autoRefreshInterval = setInterval(async () => {
                     showRefreshIndicator();
                     await loadWeek();
