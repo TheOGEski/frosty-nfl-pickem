@@ -2290,7 +2290,7 @@
             }
         }
 
-        async function viewAllPicks() {
+        async function viewAllPicks(selectedWeek = null) {
             if (!db) return;
             
             const container = document.getElementById('allPicksContainer');
@@ -2306,13 +2306,46 @@
                 const usersSnapshot = await db.ref('users').once('value');
                 const users = usersSnapshot.val() || {};
                 
-                let html = '<div style="margin-top: 20px;">';
+                // Use current week as default if no week specified
+                const weekToShow = selectedWeek !== null ? selectedWeek : currentWeek;
+                
+                // Build week selector dropdown
+                let html = `
+                    <div class="week-selector" style="margin-bottom: 20px;">
+                        <label for="viewAllPicksWeekSelect"><strong>Select Week:</strong></label>
+                        <select id="viewAllPicksWeekSelect" onchange="viewAllPicks(this.value === 'all' ? 'all' : parseInt(this.value))" style="padding: 10px 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                `;
+                
+                // Add individual week options
+                for (let i = 1; i <= 18; i++) {
+                    const selected = weekToShow === i ? 'selected' : '';
+                    html += `<option value="${i}" ${selected}>Week ${i}</option>`;
+                }
+                
+                // Add "All Weeks" option
+                const allSelected = weekToShow === 'all' ? 'selected' : '';
+                html += `<option value="all" ${allSelected}>All Weeks</option>`;
+                html += `</select></div>`;
+                
+                html += '<div style="margin-top: 20px;">';
                 
                 Object.keys(allPicks).sort().forEach(username => {
                     const displayName = users[username]?.displayName || username;
+                    
+                    // Filter weeks based on selection
+                    let weeksToDisplay = Object.keys(allPicks[username]).sort();
+                    if (weekToShow !== 'all') {
+                        weeksToDisplay = weeksToDisplay.filter(weekKey => 
+                            weekKey === `week${weekToShow}`
+                        );
+                    }
+                    
+                    // Only show user if they have picks for selected week(s)
+                    if (weeksToDisplay.length === 0) return;
+                    
                     html += `<h4 style="color: #002244; margin-top: 20px;">${displayName}</h4>`;
                     
-                    Object.keys(allPicks[username]).sort().forEach(weekKey => {
+                    weeksToDisplay.forEach(weekKey => {
                         const week = weekKey.replace('week', '');
                         const picks = allPicks[username][weekKey];
                         const weekGames = allGames[weekKey] || {};
