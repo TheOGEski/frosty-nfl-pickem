@@ -1374,9 +1374,22 @@
                 }
             });
             
-            // Show tiebreaker section if there are Monday games
+            // Show tiebreaker section - use Monday games if available, otherwise use last game of week
             const tiebreakerSection = document.getElementById('tiebreakerSection');
-            if (gamesByDay['Monday'] && gamesByDay['Monday'].length > 0) {
+            const hasMondayGames = gamesByDay['Monday'] && gamesByDay['Monday'].length > 0;
+            
+            if (hasMondayGames) {
+                // Standard weeks with Monday Night Football
+                document.querySelector('#tiebreakerSection h4').textContent = '🏆 Monday Night Football Tiebreaker';
+                document.querySelector('#tiebreakerSection p').textContent = 'Enter your prediction for the combined final score of the Monday Night game(s):';
+                tiebreakerSection.classList.remove('hidden');
+                loadTiebreaker(week);
+            } else if (games.length > 0) {
+                // Weeks without Monday games (like Week 18) - use last game of week
+                const lastGame = games[games.length - 1];
+                const lastGameDay = lastGame.dayOfWeek || 'Sunday';
+                document.querySelector('#tiebreakerSection h4').textContent = '🏆 Tiebreaker - Last Game of the Week';
+                document.querySelector('#tiebreakerSection p').textContent = `Enter your prediction for the combined final score of the last game (${lastGameDay}):`;
                 tiebreakerSection.classList.remove('hidden');
                 loadTiebreaker(week);
             } else {
@@ -1564,12 +1577,13 @@
             const tiebreakerInput = document.getElementById('tiebreakerInput');
             const score = tiebreakerInput ? parseInt(tiebreakerInput.value) : NaN;
             
-            // Check if Monday games exist
+            // Check if there are games that require a tiebreaker (any week with games)
             const games = gamesCache[week];
-            const hasMonday = games?.some(g => g.dayOfWeek && g.dayOfWeek.includes('Mon'));
+            const hasGames = games && games.length > 0;
             
-            if (hasMonday && (isNaN(score) || score < 0)) {
-                showStatus("Please enter a Monday Night tiebreaker score", "error");
+            // Require tiebreaker for all weeks with games (not just Monday games)
+            if (hasGames && (isNaN(score) || score < 0)) {
+                showStatus("Please enter a tiebreaker score", "error");
                 return;
             }
             
