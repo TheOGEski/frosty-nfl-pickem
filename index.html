@@ -509,6 +509,106 @@
             }
         }
 
+        /* Playoff Bracket Styles */
+        .bracket-container {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            padding: 30px;
+            overflow-x: auto;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 8px;
+        }
+
+        .bracket-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .bracket-column h3 {
+            text-align: center;
+            color: #002244;
+            font-size: 14px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding-bottom: 8px;
+            border-bottom: 3px solid #FFD700;
+            margin-bottom: 15px;
+        }
+
+        .matchup-pair {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 30px;
+        }
+
+        .team-slot {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            min-width: 180px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+
+        .team-slot.picked {
+            border-color: #FFD700;
+            box-shadow: 0 4px 8px rgba(255, 215, 0, 0.3);
+        }
+
+        .team-slot.tbd {
+            background: #f8f9fa;
+            border-style: dashed;
+            color: #999;
+            justify-content: center;
+        }
+
+        .team-logo {
+            width: 75px;
+            height: 75px;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        .matchup-vs {
+            text-align: center;
+            font-size: 20px;
+            font-weight: 900;
+            color: #666;
+            margin: 5px 0;
+        }
+
+        .team-info {
+            flex: 1;
+        }
+
+        .team-name {
+            font-weight: 700;
+            color: #002244;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+
+        .user-names {
+            font-size: 10px;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .connector-line {
+            width: 30px;
+            height: 2px;
+            background: #002244;
+            align-self: center;
+        }
+
         .hidden {
             display: none;
         }
@@ -570,6 +670,9 @@
                 <button class="nav-tab active" onclick="switchTab('picks')">Make Picks</button>
                 <button class="nav-tab" onclick="switchTab('dashboard')">Dashboard</button>
                 <button class="nav-tab" onclick="switchTab('standings')">Standings</button>
+                <button class="nav-tab" onclick="switchTab('playoff')" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #002244; font-weight: 800;">
+                    🏆 PLAYOFFS
+                </button>
             </div>
 
             <div class="nav-tabs hidden" id="adminTabs">
@@ -620,6 +723,39 @@
                 <h2>Overall Standings</h2>
                 <div id="standingsContainer">
                     <div class="loading">Loading standings</div>
+                </div>
+            </div>
+
+            <!-- Playoff Bracket Tab -->
+            <div id="playoffTab" class="tab-content">
+                <div style="text-align: center; padding: 40px;">
+                    <h2 style="color: #002244; font-size: 2.5em; margin-bottom: 20px;">🏆 NFL PLAYOFFS 2026</h2>
+                    <div id="playoffBracketContainer">
+                        <div class="loading">Loading playoff bracket</div>
+                    </div>
+                    <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: center;">
+                        <button class="btn" onclick="switchTab('picks')" style="background: #6c757d;">
+                            ← Back to Regular Season
+                        </button>
+                        <button class="btn" id="viewBracketDashboardBtn" onclick="switchTab('bracketdashboard')" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #002244; display: none;">
+                            📊 View Bracket Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bracket Dashboard Tab -->
+            <div id="bracketdashboardTab" class="tab-content">
+                <div style="padding: 20px;">
+                    <h2 style="color: #002244; text-align: center; margin-bottom: 20px;">🏆 PLAYOFF BRACKET DASHBOARD</h2>
+                    <div id="bracketVisualization" style="text-align: center;">
+                        <div class="loading">Loading bracket visualization</div>
+                    </div>
+                    <div style="text-align: center; margin-top: 30px;">
+                        <button class="btn" onclick="switchTab('playoff')">
+                            ← Back to Picks
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -769,6 +905,8 @@
         let autoRefreshInterval = null;
         let editingUser = null; // Track which user is being edited
         let selectedStandingsWeek = null; // Track selected week in standings
+        let playoffModeActive = false; // Track if playoff mode is enabled
+        let playoffRevealShown = false; // Track if reveal animation has been shown
 
         // ============================================
         // FIREBASE INITIALIZATION
@@ -1235,11 +1373,72 @@
         }
 
         // ============================================
+        // PLAYOFF MODE DETECTION
+        // ============================================
+        async function checkPlayoffEligibility() {
+            // Check if Week 18 is complete
+            const week18Complete = await isWeek18Complete();
+            
+            // Check localStorage for manual override or previous activation
+            const storedStatus = localStorage.getItem('playoffModeActivated');
+            const adminOverride = localStorage.getItem('forcePlayoffMode') === 'true';
+            
+            if (week18Complete || adminOverride || storedStatus === 'true') {
+                playoffModeActive = true;
+                
+                // Check if reveal has been shown
+                const revealShown = localStorage.getItem('playoffRevealShown');
+                
+                // Only show reveal if it hasn't been shown and user is not admin
+                if (!revealShown && !isAdmin && week18Complete && !adminOverride) {
+                    // Wait a brief moment for page to settle
+                    setTimeout(() => {
+                        triggerPlayoffReveal();
+                    }, 500);
+                } else if (playoffModeActive) {
+                    // Playoff mode active but no reveal needed - just apply theme
+                    activatePlayoffMode(true); // true = skip animation
+                }
+            }
+            
+            return playoffModeActive;
+        }
+
+        async function isWeek18Complete() {
+            if (!db) return false;
+            
+            try {
+                // Check if all Week 18 games are final
+                const snapshot = await db.ref('schedule/week18').once('value');
+                const week18Games = snapshot.val();
+                
+                if (!week18Games) return false;
+                
+                const games = Object.values(week18Games);
+                if (games.length === 0) return false;
+                
+                // Check if ALL games are STATUS_FINAL
+                const allComplete = games.every(game => game.status === 'STATUS_FINAL');
+                
+                console.log(`Week 18 complete: ${allComplete} (${games.filter(g => g.status === 'STATUS_FINAL').length}/${games.length} games finished)`);
+                
+                return allComplete;
+            } catch (error) {
+                console.error("Error checking Week 18 status:", error);
+                return false;
+            }
+        }
+
+        // ============================================
         // APP INITIALIZATION
         // ============================================
         async function initializeApp() {
             populateWeekSelectors();
             await loadUsers(); // Always load users for dropdowns
+            
+            // Check for playoff mode eligibility
+            await checkPlayoffEligibility();
+            
             if (isAdmin) {
                 await loadUserList();
             } else {
@@ -1256,6 +1455,7 @@
             weekSelect.innerHTML = '';
             adminWeekSelect.innerHTML = '';
             
+            // Regular season weeks (1-18)
             for (let i = 1; i <= 18; i++) {
                 const option1 = document.createElement('option');
                 option1.value = i;
@@ -1267,6 +1467,29 @@
                 option2.value = i;
                 option2.textContent = `Week ${i}`;
                 adminWeekSelect.appendChild(option2);
+            }
+            
+            // Playoff weeks (19-22) - only show if playoff mode is active
+            if (playoffModeActive) {
+                const playoffWeeks = [
+                    { value: 19, label: 'Wild Card' },
+                    { value: 20, label: 'Divisional' },
+                    { value: 21, label: 'Conference Championships' },
+                    { value: 22, label: 'Super Bowl' }
+                ];
+                
+                playoffWeeks.forEach(week => {
+                    const option1 = document.createElement('option');
+                    option1.value = week.value;
+                    option1.textContent = `${week.label}`;
+                    if (week.value === currentWeek) option1.selected = true;
+                    weekSelect.appendChild(option1);
+                    
+                    const option2 = document.createElement('option');
+                    option2.value = week.value;
+                    option2.textContent = `${week.label}`;
+                    adminWeekSelect.appendChild(option2);
+                });
             }
         }
 
@@ -2422,6 +2645,232 @@
         }
 
         // ============================================
+        // PLAYOFF BRACKET
+        // ============================================
+        async function loadPlayoffBracket() {
+            const container = document.getElementById('playoffBracketContainer');
+            container.innerHTML = '<div class="loading">Loading playoff bracket</div>';
+            
+            // Wild Card games (manually entered)
+            const wildCardGames = [
+                { id: 'wc1', home: 'Jacksonville Jaguars', away: 'Buffalo Bills', date: 'Sunday, Jan 11', time: '11:00 AM MT', conference: 'AFC' },
+                { id: 'wc2', home: 'New England Patriots', away: 'Los Angeles Chargers', date: 'Sunday, Jan 11', time: '6:00 PM MT', conference: 'AFC' },
+                { id: 'wc3', home: 'Pittsburgh Steelers', away: 'Houston Texans', date: 'Monday, Jan 12', time: '6:00 PM MT', conference: 'AFC' },
+                { id: 'wc4', home: 'Carolina Panthers', away: 'Los Angeles Rams', date: 'Saturday, Jan 10', time: '2:30 PM MT', conference: 'NFC' },
+                { id: 'wc5', home: 'Chicago Bears', away: 'Green Bay Packers', date: 'Saturday, Jan 10', time: '6:00 PM MT', conference: 'NFC' },
+                { id: 'wc6', home: 'Philadelphia Eagles', away: 'San Francisco 49ers', date: 'Sunday, Jan 11', time: '2:30 PM MT', conference: 'NFC' }
+            ];
+            
+            // Load user's playoff picks
+            let userPicks = {};
+            if (currentUser && db) {
+                try {
+                    const snapshot = await db.ref(`playoff-picks/${currentUser}/wildcard`).once('value');
+                    userPicks = snapshot.val() || {};
+                } catch (error) {
+                    console.error("Error loading playoff picks:", error);
+                }
+            }
+            
+            let html = '<div style="max-width: 900px; margin: 0 auto;">';
+            html += '<h3 style="color: #002244; margin-bottom: 20px; text-align: center;">WILD CARD WEEKEND</h3>';
+            html += '<p style="text-align: center; color: #666; margin-bottom: 30px;">Click on a team to make your pick!</p>';
+            
+            // Group by conference
+            const afc = wildCardGames.filter(g => g.conference === 'AFC');
+            const nfc = wildCardGames.filter(g => g.conference === 'NFC');
+            
+            // AFC Games
+            html += '<h4 style="color: #002244; margin: 20px 0 15px 0; padding-bottom: 10px; border-bottom: 3px solid #FFD700;">AFC</h4>';
+            afc.forEach(game => {
+                const pick = userPicks[game.id];
+                const hasPick = pick && (pick === game.home || pick === game.away);
+                const pickHome = pick === game.home;
+                const pickAway = pick === game.away;
+                
+                html += `
+                    <div class="game-card" style="margin-bottom: 20px; ${hasPick ? 'border: 3px solid #4CAF50;' : 'border: 3px solid #DC3545;'}">
+                        <div style="font-size: 14px; color: #666; margin-bottom: 10px;">${game.date} - ${game.time}</div>
+                        <div style="display: flex; gap: 20px; align-items: center; justify-content: center;">
+                            <div class="team ${pickAway ? 'selected' : ''}" onclick="makePlayoffPick('${game.id}', '${game.away}')" 
+                                style="flex: 1; max-width: 300px; cursor: pointer;">
+                                ${game.away}
+                            </div>
+                            <span style="font-weight: bold; color: #999;">@</span>
+                            <div class="team ${pickHome ? 'selected' : ''}" onclick="makePlayoffPick('${game.id}', '${game.home}')"
+                                style="flex: 1; max-width: 300px; cursor: pointer;">
+                                ${game.home}
+                            </div>
+                        </div>
+                        ${hasPick ? `<div style="margin-top: 10px; text-align: center; color: #4CAF50; font-weight: 600;">✓ Pick: ${pick}</div>` : '<div style="margin-top: 10px; text-align: center; color: #DC3545; font-weight: 600;">⚠ No pick yet</div>'}
+                    </div>
+                `;
+            });
+            
+            // NFC Games
+            html += '<h4 style="color: #002244; margin: 30px 0 15px 0; padding-bottom: 10px; border-bottom: 3px solid #FFD700;">NFC</h4>';
+            nfc.forEach(game => {
+                const pick = userPicks[game.id];
+                const hasPick = pick && (pick === game.home || pick === game.away);
+                const pickHome = pick === game.home;
+                const pickAway = pick === game.away;
+                
+                html += `
+                    <div class="game-card" style="margin-bottom: 20px; ${hasPick ? 'border: 3px solid #4CAF50;' : 'border: 3px solid #DC3545;'}">
+                        <div style="font-size: 14px; color: #666; margin-bottom: 10px;">${game.date} - ${game.time}</div>
+                        <div style="display: flex; gap: 20px; align-items: center; justify-content: center;">
+                            <div class="team ${pickAway ? 'selected' : ''}" onclick="makePlayoffPick('${game.id}', '${game.away}')"
+                                style="flex: 1; max-width: 300px; cursor: pointer;">
+                                ${game.away}
+                            </div>
+                            <span style="font-weight: bold; color: #999;">@</span>
+                            <div class="team ${pickHome ? 'selected' : ''}" onclick="makePlayoffPick('${game.id}', '${game.home}')"
+                                style="flex: 1; max-width: 300px; cursor: pointer;">
+                                ${game.home}
+                            </div>
+                        </div>
+                        ${hasPick ? `<div style="margin-top: 10px; text-align: center; color: #4CAF50; font-weight: 600;">✓ Pick: ${pick}</div>` : '<div style="margin-top: 10px; text-align: center; color: #DC3545; font-weight: 600;">⚠ No pick yet</div>'}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+            
+            // Check if user has made all 6 picks - if so, show the "View Bracket Dashboard" button
+            const pickCount = Object.keys(userPicks).length;
+            const bracketBtn = document.getElementById('viewBracketDashboardBtn');
+            if (bracketBtn) {
+                if (pickCount === 6) {
+                    bracketBtn.style.display = 'inline-block';
+                } else {
+                    bracketBtn.style.display = 'none';
+                }
+            }
+        }
+        
+        async function makePlayoffPick(gameId, team) {
+            if (!currentUser || isAdmin) {
+                showStatus("Please log in to make picks", "error");
+                return;
+            }
+            
+            try {
+                await db.ref(`playoff-picks/${currentUser}/wildcard/${gameId}`).set(team);
+                showStatus("Playoff pick saved!", "success");
+                setTimeout(() => showStatus("", ""), 2000);
+                // Reload bracket to show updated pick
+                await loadPlayoffBracket();
+            } catch (error) {
+                console.error("Error saving playoff pick:", error);
+                showStatus("Error saving pick", "error");
+            }
+        }
+
+        // ============================================
+        // BRACKET DASHBOARD
+        // ============================================
+        async function loadBracketDashboard() {
+            const container = document.getElementById('bracketVisualization');
+            container.innerHTML = '<div class="loading">Loading bracket</div>';
+            
+            // Load user's picks
+            let userPicks = {};
+            if (currentUser && db) {
+                try {
+                    const snapshot = await db.ref(`playoff-picks/${currentUser}/wildcard`).once('value');
+                    userPicks = snapshot.val() || {};
+                } catch (error) {
+                    console.error("Error loading picks:", error);
+                }
+            }
+            
+            // Get user's display name
+            let userName = 'User';
+            try {
+                const userSnapshot = await db.ref(`users/${currentUser}`).once('value');
+                const userData = userSnapshot.val();
+                userName = userData?.displayName || 'User';
+            } catch (error) {
+                console.error("Error loading user name:", error);
+            }
+            
+            // Wild Card game matchups
+            const wildCardGames = [
+                { id: 'wc1', away: 'Buffalo Bills', home: 'Jacksonville Jaguars' },
+                { id: 'wc2', away: 'Los Angeles Chargers', home: 'New England Patriots' },
+                { id: 'wc3', away: 'Houston Texans', home: 'Pittsburgh Steelers' },
+                { id: 'wc4', away: 'Los Angeles Rams', home: 'Carolina Panthers' },
+                { id: 'wc5', away: 'Green Bay Packers', home: 'Chicago Bears' },
+                { id: 'wc6', away: 'San Francisco 49ers', home: 'Philadelphia Eagles' }
+            ];
+            
+            // Build custom bracket
+            let html = '<div class="bracket-container">';
+            
+            // WILD CARD COLUMN
+            html += '<div class="bracket-column">';
+            html += '<h3>Wild Card</h3>';
+            
+            // Display all matchups with @ separator
+            wildCardGames.forEach(game => {
+                const pick = userPicks[game.id];
+                const awayPicked = pick === game.away;
+                const homePicked = pick === game.home;
+                
+                html += '<div class="matchup-pair">';
+                
+                // Away team
+                html += `
+                    <div class="team-slot ${awayPicked ? 'picked' : ''}">
+                        <img src="Bracket and Teams/${game.away}.jpg" class="team-logo" alt="${game.away}">
+                        <div class="team-info">
+                            <div class="team-name" style="${awayPicked ? 'color: #28a745; font-weight: 800;' : ''}">${game.away}</div>
+                            ${awayPicked ? `<div class="user-names">${userName}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                // @ separator
+                html += '<div class="matchup-vs">@</div>';
+                
+                // Home team
+                html += `
+                    <div class="team-slot ${homePicked ? 'picked' : ''}">
+                        <img src="Bracket and Teams/${game.home}.jpg" class="team-logo" alt="${game.home}">
+                        <div class="team-info">
+                            <div class="team-name" style="${homePicked ? 'color: #28a745; font-weight: 800;' : ''}">${game.home}</div>
+                            ${homePicked ? `<div class="user-names">${userName}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                html += '</div>'; // End matchup pair
+            });
+            
+            html += '</div>'; // End Wild Card column
+            
+            // DIVISIONAL COLUMN (header only)
+            html += '<div class="bracket-column">';
+            html += '<h3>Divisional</h3>';
+            html += '</div>';
+            
+            // CONFERENCE COLUMN (header only)
+            html += '<div class="bracket-column">';
+            html += '<h3>Conference</h3>';
+            html += '</div>';
+            
+            // SUPER BOWL COLUMN (header only)
+            html += '<div class="bracket-column">';
+            html += '<h3>Super Bowl</h3>';
+            html += '</div>';
+            
+            html += '</div>'; // End bracket container
+            
+            container.innerHTML = html;
+        }
+
+        // ============================================
         // TAB SWITCHING
         // ============================================
         function switchTab(tabName) {
@@ -2446,6 +2895,10 @@
                 loadStandings();
             } else if (tabName === 'dashboard') {
                 loadDashboard();
+            } else if (tabName === 'playoff') {
+                loadPlayoffBracket();
+            } else if (tabName === 'bracketdashboard') {
+                loadBracketDashboard();
             }
         }
 
