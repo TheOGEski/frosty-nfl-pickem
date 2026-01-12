@@ -831,6 +831,21 @@
                     <button class="btn" onclick="viewPlayoffPicks()" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #002244;">View All Playoff Picks</button>
                     <div id="playoffPicksContainer"></div>
                 </div>
+
+                <div class="admin-panel">
+                    <h2 style="margin-bottom: 20px;">✏️ Enter/Edit Playoff Picks for User</h2>
+                    <div class="input-group">
+                        <label>Select User</label>
+                        <select id="adminPlayoffUserSelect" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                            <option value="">-- Select user --</option>
+                        </select>
+                    </div>
+                    <button class="btn" onclick="loadAdminPlayoffPickEntry()" style="width: 100%; background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #002244;">Load Playoff Picks for User</button>
+                    
+                    <div id="adminPlayoffPicksContainer" class="hidden" style="margin-top: 20px;">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
             </div>
 
             <div style="margin-top: 20px; display: flex; gap: 10px;">
@@ -1016,6 +1031,18 @@
                         option.value = username;
                         option.textContent = users[username].displayName || username;
                         adminUserSelect.appendChild(option);
+                    });
+                }
+                
+                // Populate admin playoff user select (only if it exists)
+                const adminPlayoffUserSelect = document.getElementById('adminPlayoffUserSelect');
+                if (adminPlayoffUserSelect) {
+                    adminPlayoffUserSelect.innerHTML = '<option value="">-- Select user --</option>';
+                    userList.forEach(username => {
+                        const option = document.createElement('option');
+                        option.value = username;
+                        option.textContent = users[username].displayName || username;
+                        adminPlayoffUserSelect.appendChild(option);
                     });
                 }
                 
@@ -2687,6 +2714,128 @@
             } catch (error) {
                 console.error("Error saving admin picks:", error);
                 showStatus("Error saving picks", "error");
+            }
+        }
+
+        async function loadAdminPlayoffPickEntry() {
+            const username = document.getElementById('adminPlayoffUserSelect').value;
+            
+            if (!username) {
+                showStatus("Please select a user", "error");
+                return;
+            }
+            
+            showStatus("Loading playoff picks for admin entry...", "info");
+            
+            try {
+                const usersSnapshot = await db.ref('users').once('value');
+                const users = usersSnapshot.val() || {};
+                const displayName = users[username]?.displayName || username;
+                
+                // Load existing playoff picks for this user
+                const snapshot = await db.ref(`playoff-picks/${username}/wildcard`).once('value');
+                const existingPicks = snapshot.val() || {};
+                
+                // Wild Card game definitions
+                const wildCardGames = [
+                    { id: 'wc1', away: 'Buffalo Bills', home: 'Jacksonville Jaguars', conference: 'AFC', date: 'Sunday, Jan 11', time: '11:00 AM MT' },
+                    { id: 'wc2', away: 'Los Angeles Chargers', home: 'New England Patriots', conference: 'AFC', date: 'Sunday, Jan 11', time: '6:00 PM MT' },
+                    { id: 'wc3', away: 'Houston Texans', home: 'Pittsburgh Steelers', conference: 'AFC', date: 'Monday, Jan 12', time: '6:00 PM MT' },
+                    { id: 'wc4', away: 'Los Angeles Rams', home: 'Carolina Panthers', conference: 'NFC', date: 'Saturday, Jan 10', time: '2:30 PM MT' },
+                    { id: 'wc5', away: 'Green Bay Packers', home: 'Chicago Bears', conference: 'NFC', date: 'Saturday, Jan 10', time: '6:00 PM MT' },
+                    { id: 'wc6', away: 'San Francisco 49ers', home: 'Philadelphia Eagles', conference: 'NFC', date: 'Sunday, Jan 11', time: '2:30 PM MT' }
+                ];
+                
+                // Display form
+                const container = document.getElementById('adminPlayoffPicksContainer');
+                container.classList.remove('hidden');
+                
+                let html = `<h4 style="color: #002244;">Enter Wild Card picks for: ${displayName}</h4>`;
+                
+                // Group by conference
+                html += '<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #FFD700; padding-bottom: 5px;">AFC</h5>';
+                wildCardGames.filter(g => g.conference === 'AFC').forEach(game => {
+                    const currentPick = existingPicks[game.id];
+                    html += `
+                        <div class="user-pick-entry">
+                            <p><strong>${game.away} @ ${game.home}</strong></p>
+                            <p style="font-size: 14px; color: #666;">${game.date} - ${game.time}</p>
+                            <div style="margin-top: 10px;">
+                                <label>
+                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
+                                        ${currentPick === game.away ? 'checked' : ''}>
+                                    ${game.away}
+                                </label>
+                                <label style="margin-left: 20px;">
+                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
+                                        ${currentPick === game.home ? 'checked' : ''}>
+                                    ${game.home}
+                                </label>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #FFD700; padding-bottom: 5px;">NFC</h5>';
+                wildCardGames.filter(g => g.conference === 'NFC').forEach(game => {
+                    const currentPick = existingPicks[game.id];
+                    html += `
+                        <div class="user-pick-entry">
+                            <p><strong>${game.away} @ ${game.home}</strong></p>
+                            <p style="font-size: 14px; color: #666;">${game.date} - ${game.time}</p>
+                            <div style="margin-top: 10px;">
+                                <label>
+                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
+                                        ${currentPick === game.away ? 'checked' : ''}>
+                                    ${game.away}
+                                </label>
+                                <label style="margin-left: 20px;">
+                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
+                                        ${currentPick === game.home ? 'checked' : ''}>
+                                    ${game.home}
+                                </label>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `<button class="btn btn-success" onclick="saveAdminPlayoffPicks('${username}')" style="margin-top: 20px; width: 100%;">Save Playoff Picks</button>`;
+                
+                container.innerHTML = html;
+                showStatus("", "");
+            } catch (error) {
+                console.error("Error loading playoff picks for admin:", error);
+                showStatus("Error loading playoff picks", "error");
+            }
+        }
+
+        async function saveAdminPlayoffPicks(username) {
+            if (!db) return;
+            
+            showStatus("Saving playoff picks...", "info");
+            
+            try {
+                const wildCardGames = [
+                    { id: 'wc1' }, { id: 'wc2' }, { id: 'wc3' },
+                    { id: 'wc4' }, { id: 'wc5' }, { id: 'wc6' }
+                ];
+                
+                const updates = {};
+                
+                wildCardGames.forEach(game => {
+                    const radio = document.querySelector(`input[name="admin_playoff_${game.id}"]:checked`);
+                    if (radio) {
+                        updates[`playoff-picks/${username}/wildcard/${game.id}`] = radio.value;
+                    }
+                });
+                
+                await db.ref().update(updates);
+                
+                showStatus(`Playoff picks saved for ${username}!`, "success");
+                setTimeout(() => showStatus("", ""), 3000);
+            } catch (error) {
+                console.error("Error saving admin playoff picks:", error);
+                showStatus("Error saving playoff picks", "error");
             }
         }
 
