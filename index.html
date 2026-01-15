@@ -3355,6 +3355,23 @@
                 return;
             }
             
+            // Check if first game of this round has started
+            const roundGameDates = {
+                wildcard: new Date('2026-01-10T22:30:00Z'),     // First Wild Card game: Saturday, Jan 10, 2:30 PM MT
+                divisional: new Date('2026-01-18T22:30:00Z'),   // First Divisional game: Saturday, Jan 18, 2:30 PM MT
+                conference: new Date('2026-01-26T00:00:00Z'),   // First Conference game: Sunday, Jan 26
+                superbowl: new Date('2026-02-09T00:00:00Z')     // Super Bowl: Sunday, Feb 9
+            };
+            
+            const firstGameDate = roundGameDates[roundKey];
+            const now = new Date();
+            
+            if (firstGameDate && now >= firstGameDate) {
+                showStatus(`${roundKey.charAt(0).toUpperCase() + roundKey.slice(1)} picks are now locked. The first game has started.`, "error");
+                setTimeout(() => showStatus("", ""), 3000);
+                return;
+            }
+            
             try {
                 await db.ref(`playoff-picks/${currentUser}/${roundKey}/${gameId}`).set(team);
                 showStatus("Playoff pick saved!", "success");
@@ -3381,26 +3398,8 @@
                 
                 console.log(`Current playoff round: ${currentRound}`);
                 
-                // Check if user has completed picks for this round AND if games haven't started yet
-                if (!isAdmin && currentUser) {
-                    const picksComplete = await hasCompletedRoundPicks(currentUser, roundInfo.roundKey);
-                    
-                    // For Divisional round, check if games have started
-                    if (roundInfo.roundKey === 'divisional') {
-                        const divisionalStarted = hasDivisionalStarted();
-                        if (picksComplete || divisionalStarted) {
-                            // Redirect to dashboard if picks complete OR games started
-                            console.log("Divisional picks complete or games started, showing dashboard");
-                            switchTab('bracketdashboard');
-                            return;
-                        }
-                    } else if (picksComplete) {
-                        // For other rounds, redirect if picks complete
-                        console.log("Picks complete for this round, showing dashboard");
-                        switchTab('bracketdashboard');
-                        return;
-                    }
-                }
+                // Don't redirect - let users view picks page even if complete
+                // They can still change picks until first game starts
                 
                 // Try to fetch games for current round from ESPN
                 let games = await fetchPlayoffGames(roundInfo.roundKey);
