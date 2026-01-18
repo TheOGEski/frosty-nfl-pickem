@@ -894,6 +894,15 @@
 
                 <div class="admin-panel">
                     <h2 style="margin-bottom: 20px;">🏆 View Playoff Picks</h2>
+                    <div class="input-group">
+                        <label>Select Playoff Round</label>
+                        <select id="viewPlayoffRoundSelect" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                            <option value="wildcard">Wild Card Weekend</option>
+                            <option value="divisional">Divisional Round</option>
+                            <option value="conference">Conference Championships</option>
+                            <option value="superbowl">Super Bowl</option>
+                        </select>
+                    </div>
                     <button class="btn" onclick="viewPlayoffPicks()" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #002244;">View All Playoff Picks</button>
                     <div id="playoffPicksContainer"></div>
                 </div>
@@ -904,6 +913,15 @@
                         <label>Select User</label>
                         <select id="adminPlayoffUserSelect" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
                             <option value="">-- Select user --</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Select Playoff Round</label>
+                        <select id="adminPlayoffRoundSelect" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
+                            <option value="wildcard">Wild Card Weekend</option>
+                            <option value="divisional">Divisional Round</option>
+                            <option value="conference">Conference Championships</option>
+                            <option value="superbowl">Super Bowl</option>
                         </select>
                     </div>
                     <button class="btn" onclick="loadAdminPlayoffPickEntry()" style="width: 100%; background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #002244;">Load Playoff Picks for User</button>
@@ -2824,6 +2842,7 @@
 
         async function loadAdminPlayoffPickEntry() {
             const username = document.getElementById('adminPlayoffUserSelect').value;
+            const roundKey = document.getElementById('adminPlayoffRoundSelect').value;
             
             if (!username) {
                 showStatus("Please select a user", "error");
@@ -2837,74 +2856,145 @@
                 const users = usersSnapshot.val() || {};
                 const displayName = users[username]?.displayName || username;
                 
-                // Load existing playoff picks for this user
-                const snapshot = await db.ref(`playoff-picks/${username}/wildcard`).once('value');
-                const existingPicks = snapshot.val() || {};
+                // Get round info
+                const roundInfo = await getPlayoffRoundInfo(roundKey);
                 
-                // Wild Card game definitions
-                const wildCardGames = [
-                    { id: 'wc1', away: 'Buffalo Bills', home: 'Jacksonville Jaguars', conference: 'AFC', date: 'Sunday, Jan 11', time: '11:00 AM MT' },
-                    { id: 'wc2', away: 'Los Angeles Chargers', home: 'New England Patriots', conference: 'AFC', date: 'Sunday, Jan 11', time: '6:00 PM MT' },
-                    { id: 'wc3', away: 'Houston Texans', home: 'Pittsburgh Steelers', conference: 'AFC', date: 'Monday, Jan 12', time: '6:00 PM MT' },
-                    { id: 'wc4', away: 'Los Angeles Rams', home: 'Carolina Panthers', conference: 'NFC', date: 'Saturday, Jan 10', time: '2:30 PM MT' },
-                    { id: 'wc5', away: 'Green Bay Packers', home: 'Chicago Bears', conference: 'NFC', date: 'Saturday, Jan 10', time: '6:00 PM MT' },
-                    { id: 'wc6', away: 'San Francisco 49ers', home: 'Philadelphia Eagles', conference: 'NFC', date: 'Sunday, Jan 11', time: '2:30 PM MT' }
-                ];
+                // Load existing playoff picks for this user from flat structure
+                const snapshot = await db.ref(`playoff-picks/${username}`).once('value');
+                const allPicks = snapshot.val() || {};
+                
+                // Filter picks for this round
+                const existingPicks = {};
+                Object.keys(allPicks).forEach(gameId => {
+                    // Check if this pick belongs to the current round
+                    if ((roundKey === 'wildcard' && gameId.startsWith('wc')) ||
+                        (roundKey === 'divisional' && gameId.startsWith('div')) ||
+                        (roundKey === 'conference' && (gameId === 'afc' || gameId === 'nfc' || gameId.startsWith('conf'))) ||
+                        (roundKey === 'superbowl' && (gameId === 'sb1' || gameId.startsWith('sb-')))) {
+                        existingPicks[gameId] = allPicks[gameId];
+                    }
+                });
+                
+                // Define games for each round - use hyphenated IDs to match migrated data
+                const gamesByRound = {
+                    wildcard: [
+                        { id: 'wc-1', away: 'Buffalo Bills', home: 'Jacksonville Jaguars', conference: 'AFC' },
+                        { id: 'wc-2', away: 'Los Angeles Chargers', home: 'New England Patriots', conference: 'AFC' },
+                        { id: 'wc-3', away: 'Houston Texans', home: 'Pittsburgh Steelers', conference: 'AFC' },
+                        { id: 'wc-4', away: 'Los Angeles Rams', home: 'Carolina Panthers', conference: 'NFC' },
+                        { id: 'wc-5', away: 'Green Bay Packers', home: 'Chicago Bears', conference: 'NFC' },
+                        { id: 'wc-6', away: 'San Francisco 49ers', home: 'Philadelphia Eagles', conference: 'NFC' }
+                    ],
+                    divisional: [
+                        { id: 'div-1', away: 'Buffalo Bills', home: 'Denver Broncos', conference: 'AFC' },
+                        { id: 'div-2', away: 'Houston Texans', home: 'New England Patriots', conference: 'AFC' },
+                        { id: 'div-3', away: 'Los Angeles Rams', home: 'Chicago Bears', conference: 'NFC' },
+                        { id: 'div-4', away: 'San Francisco 49ers', home: 'Seattle Seahawks', conference: 'NFC' }
+                    ],
+                    conference: [
+                        { id: 'conf-afc', away: 'TBD', home: 'TBD', conference: 'AFC' },
+                        { id: 'conf-nfc', away: 'TBD', home: 'TBD', conference: 'NFC' }
+                    ],
+                    superbowl: [
+                        { id: 'sb-1', away: 'AFC Champion', home: 'NFC Champion', conference: null }
+                    ]
+                };
+                
+                const roundGames = gamesByRound[roundKey] || [];
                 
                 // Display form
                 const container = document.getElementById('adminPlayoffPicksContainer');
                 container.classList.remove('hidden');
                 
-                let html = `<h4 style="color: #002244;">Enter Wild Card picks for: ${displayName}</h4>`;
+                let html = `<h4 style="color: #002244;">Enter ${roundInfo.name} picks for: ${displayName}</h4>`;
                 
-                // Group by conference
-                html += '<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #FFD700; padding-bottom: 5px;">AFC</h5>';
-                wildCardGames.filter(g => g.conference === 'AFC').forEach(game => {
-                    const currentPick = existingPicks[game.id];
-                    html += `
-                        <div class="user-pick-entry">
-                            <p><strong>${game.away} @ ${game.home}</strong></p>
-                            <p style="font-size: 14px; color: #666;">${game.date} - ${game.time}</p>
-                            <div style="margin-top: 10px;">
-                                <label>
-                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
-                                        ${currentPick === game.away ? 'checked' : ''}>
-                                    ${game.away}
-                                </label>
-                                <label style="margin-left: 20px;">
-                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
-                                        ${currentPick === game.home ? 'checked' : ''}>
-                                    ${game.home}
-                                </label>
+                // Group by conference if applicable
+                const afcGames = roundGames.filter(g => g.conference === 'AFC');
+                const nfcGames = roundGames.filter(g => g.conference === 'NFC');
+                const neutralGames = roundGames.filter(g => !g.conference);
+                
+                if (afcGames.length > 0) {
+                    html += '<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #FFD700; padding-bottom: 5px;">AFC</h5>';
+                    afcGames.forEach(game => {
+                        const currentPick = existingPicks[game.id];
+                        // Check if pick matches either team in the matchup
+                        const pickIsAway = currentPick === game.away || currentPick?.includes(game.away) || game.away.includes(currentPick || '');
+                        const pickIsHome = currentPick === game.home || currentPick?.includes(game.home) || game.home.includes(currentPick || '');
+                        html += `
+                            <div class="user-pick-entry">
+                                <p><strong>${game.away} @ ${game.home}</strong></p>
+                                <div style="margin-top: 10px;">
+                                    <label>
+                                        <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
+                                            ${pickIsAway ? 'checked' : ''}>
+                                        ${game.away}
+                                    </label>
+                                    <label style="margin-left: 20px;">
+                                        <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
+                                            ${pickIsHome ? 'checked' : ''}>
+                                        ${game.home}
+                                    </label>
+                                </div>
                             </div>
-                        </div>
-                    `;
-                });
+                        `;
+                    });
+                }
                 
-                html += '<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #FFD700; padding-bottom: 5px;">NFC</h5>';
-                wildCardGames.filter(g => g.conference === 'NFC').forEach(game => {
-                    const currentPick = existingPicks[game.id];
-                    html += `
-                        <div class="user-pick-entry">
-                            <p><strong>${game.away} @ ${game.home}</strong></p>
-                            <p style="font-size: 14px; color: #666;">${game.date} - ${game.time}</p>
-                            <div style="margin-top: 10px;">
-                                <label>
-                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
-                                        ${currentPick === game.away ? 'checked' : ''}>
-                                    ${game.away}
-                                </label>
-                                <label style="margin-left: 20px;">
-                                    <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
-                                        ${currentPick === game.home ? 'checked' : ''}>
-                                    ${game.home}
-                                </label>
+                if (nfcGames.length > 0) {
+                    html += '<h5 style="margin-top: 20px; color: #002244; border-bottom: 2px solid #FFD700; padding-bottom: 5px;">NFC</h5>';
+                    nfcGames.forEach(game => {
+                        const currentPick = existingPicks[game.id];
+                        // Check if pick matches either team in the matchup
+                        const pickIsAway = currentPick === game.away || currentPick?.includes(game.away) || game.away.includes(currentPick || '');
+                        const pickIsHome = currentPick === game.home || currentPick?.includes(game.home) || game.home.includes(currentPick || '');
+                        html += `
+                            <div class="user-pick-entry">
+                                <p><strong>${game.away} @ ${game.home}</strong></p>
+                                <div style="margin-top: 10px;">
+                                    <label>
+                                        <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
+                                            ${pickIsAway ? 'checked' : ''}>
+                                        ${game.away}
+                                    </label>
+                                    <label style="margin-left: 20px;">
+                                        <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
+                                            ${pickIsHome ? 'checked' : ''}>
+                                        ${game.home}
+                                    </label>
+                                </div>
                             </div>
-                        </div>
-                    `;
-                });
+                        `;
+                    });
+                }
                 
-                html += `<button class="btn btn-success" onclick="saveAdminPlayoffPicks('${username}')" style="margin-top: 20px; width: 100%;">Save Playoff Picks</button>`;
+                if (neutralGames.length > 0) {
+                    neutralGames.forEach(game => {
+                        const currentPick = existingPicks[game.id];
+                        // Check if pick matches either team in the matchup
+                        const pickIsAway = currentPick === game.away || currentPick?.includes(game.away) || game.away.includes(currentPick || '');
+                        const pickIsHome = currentPick === game.home || currentPick?.includes(game.home) || game.home.includes(currentPick || '');
+                        html += `
+                            <div class="user-pick-entry">
+                                <p><strong>Super Bowl LX</strong></p>
+                                <p style="font-size: 14px; color: #666;">${game.away} vs ${game.home}</p>
+                                <div style="margin-top: 10px;">
+                                    <label>
+                                        <input type="radio" name="admin_playoff_${game.id}" value="${game.away}" 
+                                            ${pickIsAway ? 'checked' : ''}>
+                                        ${game.away}
+                                    </label>
+                                    <label style="margin-left: 20px;">
+                                        <input type="radio" name="admin_playoff_${game.id}" value="${game.home}"
+                                            ${pickIsHome ? 'checked' : ''}>
+                                        ${game.home}
+                                    </label>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                html += `<button class="btn btn-success" onclick="saveAdminPlayoffPicks('${username}', '${roundKey}')" style="margin-top: 20px; width: 100%;">Save ${roundInfo.name} Picks</button>`;
                 
                 container.innerHTML = html;
                 showStatus("", "");
@@ -2914,29 +3004,26 @@
             }
         }
 
-        async function saveAdminPlayoffPicks(username) {
+        async function saveAdminPlayoffPicks(username, roundKey) {
             if (!db) return;
             
             showStatus("Saving playoff picks...", "info");
             
             try {
-                const wildCardGames = [
-                    { id: 'wc1' }, { id: 'wc2' }, { id: 'wc3' },
-                    { id: 'wc4' }, { id: 'wc5' }, { id: 'wc6' }
-                ];
-                
+                const roundInfo = await getPlayoffRoundInfo(roundKey);
                 const updates = {};
                 
-                wildCardGames.forEach(game => {
-                    const radio = document.querySelector(`input[name="admin_playoff_${game.id}"]:checked`);
+                // Save to flat structure: /playoff-picks/{username}/{gameId}
+                roundInfo.gameIds.forEach(gameId => {
+                    const radio = document.querySelector(`input[name="admin_playoff_${gameId}"]:checked`);
                     if (radio) {
-                        updates[`playoff-picks/${username}/wildcard/${game.id}`] = radio.value;
+                        updates[`playoff-picks/${username}/${gameId}`] = radio.value;
                     }
                 });
                 
                 await db.ref().update(updates);
                 
-                showStatus(`Playoff picks saved for ${username}!`, "success");
+                showStatus(`${roundInfo.name} picks saved for ${username}!`, "success");
                 setTimeout(() => showStatus("", ""), 3000);
             } catch (error) {
                 console.error("Error saving admin playoff picks:", error);
@@ -2948,6 +3035,7 @@
             if (!db) return;
             
             const container = document.getElementById('playoffPicksContainer');
+            const roundKey = document.getElementById('viewPlayoffRoundSelect').value;
             container.innerHTML = '<div class="loading">Loading playoff picks</div>';
             
             try {
@@ -2962,24 +3050,54 @@
                     return;
                 }
                 
-                // Wild Card game definitions
-                const wildCardGames = [
-                    { id: 'wc1', away: 'Buffalo Bills', home: 'Jacksonville Jaguars', conference: 'AFC' },
-                    { id: 'wc2', away: 'Los Angeles Chargers', home: 'New England Patriots', conference: 'AFC' },
-                    { id: 'wc3', away: 'Houston Texans', home: 'Pittsburgh Steelers', conference: 'AFC' },
-                    { id: 'wc4', away: 'Los Angeles Rams', home: 'Carolina Panthers', conference: 'NFC' },
-                    { id: 'wc5', away: 'Green Bay Packers', home: 'Chicago Bears', conference: 'NFC' },
-                    { id: 'wc6', away: 'San Francisco 49ers', home: 'Philadelphia Eagles', conference: 'NFC' }
-                ];
+                // Get round info
+                const roundInfo = await getPlayoffRoundInfo(roundKey);
+                
+                // Game definitions for each round
+                const gamesByRound = {
+                    wildcard: [
+                        { id: 'wc1', away: 'Buffalo Bills', home: 'Jacksonville Jaguars', conference: 'AFC' },
+                        { id: 'wc2', away: 'Los Angeles Chargers', home: 'New England Patriots', conference: 'AFC' },
+                        { id: 'wc3', away: 'Houston Texans', home: 'Pittsburgh Steelers', conference: 'AFC' },
+                        { id: 'wc4', away: 'Los Angeles Rams', home: 'Carolina Panthers', conference: 'NFC' },
+                        { id: 'wc5', away: 'Green Bay Packers', home: 'Chicago Bears', conference: 'NFC' },
+                        { id: 'wc6', away: 'San Francisco 49ers', home: 'Philadelphia Eagles', conference: 'NFC' }
+                    ],
+                    divisional: [
+                        { id: 'div1', away: 'Buffalo Bills', home: 'Denver Broncos', conference: 'AFC' },
+                        { id: 'div2', away: 'Houston Texans', home: 'New England Patriots', conference: 'AFC' },
+                        { id: 'div3', away: 'Los Angeles Rams', home: 'Chicago Bears', conference: 'NFC' },
+                        { id: 'div4', away: 'San Francisco 49ers', home: 'Seattle Seahawks', conference: 'NFC' }
+                    ],
+                    conference: [
+                        { id: 'afc', away: 'TBD', home: 'TBD', conference: 'AFC' },
+                        { id: 'nfc', away: 'TBD', home: 'TBD', conference: 'NFC' }
+                    ],
+                    superbowl: [
+                        { id: 'sb1', away: 'AFC Champion', home: 'NFC Champion', conference: null }
+                    ]
+                };
+                
+                const roundGames = gamesByRound[roundKey] || [];
                 
                 let html = '<div style="background: rgba(255, 215, 0, 0.1); padding: 20px; border-radius: 8px; margin-bottom: 20px;">';
-                html += '<h3 style="color: #002244; margin-bottom: 15px;">🏈 Wild Card Weekend Picks</h3>';
+                html += `<h3 style="color: #002244; margin-bottom: 15px;">🏈 ${roundInfo.name} Picks</h3>`;
                 
-                // Summary statistics
+                // Summary statistics - count from flat structure
                 const totalUsers = Object.keys(allPlayoffPicks).length;
                 const completeUsers = Object.keys(allPlayoffPicks).filter(username => {
-                    const userPicks = allPlayoffPicks[username].wildcard || {};
-                    return Object.keys(userPicks).length === 6;
+                    // Filter picks for this round from flat structure
+                    const flatPicks = allPlayoffPicks[username] || {};
+                    const roundPicks = {};
+                    Object.keys(flatPicks).forEach(gameId => {
+                        if ((roundKey === 'wildcard' && gameId.startsWith('wc')) ||
+                            (roundKey === 'divisional' && gameId.startsWith('div')) ||
+                            (roundKey === 'conference' && (gameId === 'afc' || gameId === 'nfc' || gameId.startsWith('conf'))) ||
+                            (roundKey === 'superbowl' && (gameId === 'sb1' || gameId.startsWith('sb-')))) {
+                            roundPicks[gameId] = flatPicks[gameId];
+                        }
+                    });
+                    return Object.keys(roundPicks).length === roundInfo.gameCount;
                 }).length;
                 
                 html += `<p style="color: #666;">Total participants: <strong>${totalUsers}</strong> | Complete picks: <strong>${completeUsers}/${totalUsers}</strong></p>`;
@@ -2991,9 +3109,19 @@
                 
                 Object.keys(allPlayoffPicks).sort().forEach(username => {
                     const displayName = users[username]?.displayName || username;
-                    const userPicks = allPlayoffPicks[username].wildcard || {};
+                    // Filter picks for this round from flat structure
+                    const flatPicks = allPlayoffPicks[username] || {};
+                    const userPicks = {};
+                    Object.keys(flatPicks).forEach(gameId => {
+                        if ((roundKey === 'wildcard' && gameId.startsWith('wc')) ||
+                            (roundKey === 'divisional' && gameId.startsWith('div')) ||
+                            (roundKey === 'conference' && (gameId === 'afc' || gameId === 'nfc' || gameId.startsWith('conf'))) ||
+                            (roundKey === 'superbowl' && (gameId === 'sb1' || gameId.startsWith('sb-')))) {
+                            userPicks[gameId] = flatPicks[gameId];
+                        }
+                    });
                     const pickCount = Object.keys(userPicks).length;
-                    const isComplete = pickCount === 6;
+                    const isComplete = pickCount === roundInfo.gameCount;
                     
                     html += `<div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid ${isComplete ? '#28a745' : '#dc3545'};">`;
                     html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">`;
@@ -3002,34 +3130,59 @@
                     html += `</div>`;
                     
                     // AFC Games
-                    html += '<div style="margin-bottom: 15px;">';
-                    html += '<h6 style="color: #002244; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">AFC</h6>';
-                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">';
+                    // Group by conference if applicable
+                    const afcGames = roundGames.filter(g => g.conference === 'AFC');
+                    const nfcGames = roundGames.filter(g => g.conference === 'NFC');
+                    const neutralGames = roundGames.filter(g => !g.conference);
                     
-                    wildCardGames.filter(g => g.conference === 'AFC').forEach(game => {
-                        const pick = userPicks[game.id];
-                        html += `<div style="padding: 8px 12px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid ${pick ? '#FFD700' : '#ddd'};">`;
-                        html += `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">${game.away} @ ${game.home}</div>`;
-                        html += `<div style="font-weight: 600; color: ${pick ? '#002244' : '#999'};">${pick || 'No pick'}</div>`;
-                        html += `</div>`;
-                    });
+                    if (afcGames.length > 0) {
+                        html += '<div style="margin-bottom: 15px;">';
+                        html += '<h6 style="color: #002244; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">AFC</h6>';
+                        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">';
+                        
+                        afcGames.forEach(game => {
+                            const pick = userPicks[game.id];
+                            html += `<div style="padding: 8px 12px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid ${pick ? '#FFD700' : '#ddd'};">`;
+                            html += `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">${game.away} @ ${game.home}</div>`;
+                            html += `<div style="font-weight: 600; color: ${pick ? '#002244' : '#999'};">${pick || 'No pick'}</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div></div>';
+                    }
                     
-                    html += '</div></div>';
+                    if (nfcGames.length > 0) {
+                        html += '<div>';
+                        html += '<h6 style="color: #002244; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">NFC</h6>';
+                        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">';
+                        
+                        nfcGames.forEach(game => {
+                            const pick = userPicks[game.id];
+                            html += `<div style="padding: 8px 12px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid ${pick ? '#FFD700' : '#ddd'};">`;
+                            html += `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">${game.away} @ ${game.home}</div>`;
+                            html += `<div style="font-weight: 600; color: ${pick ? '#002244' : '#999'};">${pick || 'No pick'}</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div></div>';
+                    }
                     
-                    // NFC Games
-                    html += '<div>';
-                    html += '<h6 style="color: #002244; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">NFC</h6>';
-                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">';
+                    if (neutralGames.length > 0) {
+                        html += '<div>';
+                        html += '<h6 style="color: #002244; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Super Bowl</h6>';
+                        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">';
+                        
+                        neutralGames.forEach(game => {
+                            const pick = userPicks[game.id];
+                            html += `<div style="padding: 8px 12px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid ${pick ? '#FFD700' : '#ddd'};">`;
+                            html += `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">${game.away} vs ${game.home}</div>`;
+                            html += `<div style="font-weight: 600; color: ${pick ? '#002244' : '#999'};">${pick || 'No pick'}</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div></div>';
+                    }
                     
-                    wildCardGames.filter(g => g.conference === 'NFC').forEach(game => {
-                        const pick = userPicks[game.id];
-                        html += `<div style="padding: 8px 12px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid ${pick ? '#FFD700' : '#ddd'};">`;
-                        html += `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">${game.away} @ ${game.home}</div>`;
-                        html += `<div style="font-weight: 600; color: ${pick ? '#002244' : '#999'};">${pick || 'No pick'}</div>`;
-                        html += `</div>`;
-                    });
-                    
-                    html += '</div></div>';
                     html += `</div>`;
                 });
                 
@@ -3039,9 +3192,10 @@
                 html += '<div style="margin-top: 40px;">';
                 html += '<h4 style="color: #002244; margin-bottom: 20px; border-bottom: 2px solid #FFD700; padding-bottom: 10px;">Picks by Game</h4>';
                 
-                wildCardGames.forEach(game => {
+                roundGames.forEach(game => {
+                    const conferenceLabel = game.conference ? `(${game.conference})` : '';
                     html += `<div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #FFD700;">`;
-                    html += `<h5 style="color: #002244; margin-bottom: 15px;">${game.away} @ ${game.home} <span style="font-size: 12px; color: #666; font-weight: normal;">(${game.conference})</span></h5>`;
+                    html += `<h5 style="color: #002244; margin-bottom: 15px;">${game.away} @ ${game.home} <span style="font-size: 12px; color: #666; font-weight: normal;">${conferenceLabel}</span></h5>`;
                     
                     // Count picks for each team
                     let awayPicks = [];
@@ -3050,7 +3204,9 @@
                     
                     Object.keys(allPlayoffPicks).forEach(username => {
                         const displayName = users[username]?.displayName || username;
-                        const pick = allPlayoffPicks[username].wildcard?.[game.id];
+                        // Get pick from flat structure
+                        const flatPicks = allPlayoffPicks[username] || {};
+                        const pick = flatPicks[game.id];
                         
                         if (pick === game.away) {
                             awayPicks.push(displayName);
@@ -3258,28 +3414,28 @@
                     week: 1,
                     roundKey: 'wildcard',
                     gameCount: 6,
-                    gameIds: ['wc1', 'wc2', 'wc3', 'wc4', 'wc5', 'wc6']
+                    gameIds: ['wc-1', 'wc-2', 'wc-3', 'wc-4', 'wc-5', 'wc-6']
                 },
                 divisional: {
                     name: 'Divisional Round',
                     week: 2,
                     roundKey: 'divisional',
                     gameCount: 4,
-                    gameIds: ['div1', 'div2', 'div3', 'div4']
+                    gameIds: ['div-1', 'div-2', 'div-3', 'div-4']
                 },
                 conference: {
                     name: 'Conference Championships',
                     week: 3,
                     roundKey: 'conference',
                     gameCount: 2,
-                    gameIds: ['afc', 'nfc']
+                    gameIds: ['conf-afc', 'conf-nfc']
                 },
                 superbowl: {
                     name: 'Super Bowl LX',
                     week: 4,
                     roundKey: 'superbowl',
                     gameCount: 1,
-                    gameIds: ['sb1']
+                    gameIds: ['sb-1']
                 }
             };
             
@@ -3337,10 +3493,22 @@
             
             try {
                 const roundInfo = await getPlayoffRoundInfo(roundKey);
-                const snapshot = await db.ref(`playoff-picks/${username}/${roundKey}`).once('value');
-                const picks = snapshot.val() || {};
+                // Load all picks from flat structure
+                const snapshot = await db.ref(`playoff-picks/${username}`).once('value');
+                const allPicks = snapshot.val() || {};
                 
-                const pickCount = Object.keys(picks).length;
+                // Filter picks for this round
+                const roundPicks = {};
+                Object.keys(allPicks).forEach(gameId => {
+                    if ((roundKey === 'wildcard' && gameId.startsWith('wc')) ||
+                        (roundKey === 'divisional' && gameId.startsWith('div')) ||
+                        (roundKey === 'conference' && (gameId === 'afc' || gameId === 'nfc' || gameId.startsWith('conf'))) ||
+                        (roundKey === 'superbowl' && (gameId === 'sb1' || gameId.startsWith('sb-')))) {
+                        roundPicks[gameId] = allPicks[gameId];
+                    }
+                });
+                
+                const pickCount = Object.keys(roundPicks).length;
                 return pickCount >= roundInfo.gameCount;
             } catch (error) {
                 console.error("Error checking picks:", error);
@@ -3397,7 +3565,8 @@
             }
             
             try {
-                await db.ref(`playoff-picks/${currentUser}/${roundKey}/${gameId}`).set(team);
+                // Save to flat structure: /playoff-picks/{username}/{gameId}
+                await db.ref(`playoff-picks/${currentUser}/${gameId}`).set(team);
                 showStatus("Playoff pick saved!", "success");
                 setTimeout(() => showStatus("", ""), 2000);
                 // Reload bracket to show updated pick
@@ -3452,12 +3621,33 @@
                     return;
                 }
                 
-                // Load user's picks for this round
+                // Load user's picks for this round (from flat structure)
                 let userPicks = {};
                 if (currentUser && db) {
                     try {
-                        const snapshot = await db.ref(`playoff-picks/${currentUser}/${roundInfo.roundKey}`).once('value');
-                        userPicks = snapshot.val() || {};
+                        // Load ALL user picks from flat structure
+                        const snapshot = await db.ref(`playoff-picks/${currentUser}`).once('value');
+                        const allPicks = snapshot.val() || {};
+                        
+                        // Filter picks for current round based on game ID prefixes
+                        // Game IDs follow pattern: wc-1, div-1, conf-afc, sb-1
+                        const roundPrefix = roundInfo.roundKey === 'wildcard' ? 'wc-' :
+                                          roundInfo.roundKey === 'divisional' ? 'div-' :
+                                          roundInfo.roundKey === 'conference' ? 'conf-' :
+                                          roundInfo.roundKey === 'superbowl' ? 'sb-' : '';
+                        
+                        // Also support old game IDs without hyphens for backward compatibility
+                        Object.keys(allPicks).forEach(gameId => {
+                            if (gameId.startsWith(roundPrefix) || 
+                                (roundInfo.roundKey === 'conference' && (gameId === 'afc' || gameId === 'nfc')) ||
+                                (roundInfo.roundKey === 'superbowl' && gameId === 'sb1') ||
+                                (roundInfo.roundKey === 'wildcard' && gameId.startsWith('wc')) ||
+                                (roundInfo.roundKey === 'divisional' && gameId.startsWith('div'))) {
+                                userPicks[gameId] = allPicks[gameId];
+                            }
+                        });
+                        
+                        console.log(`Loaded ${Object.keys(userPicks).length} picks for ${roundInfo.roundKey}:`, userPicks);
                     } catch (error) {
                         console.error("Error loading playoff picks:", error);
                     }
@@ -3603,11 +3793,12 @@
                         allRoundGames[round] = wildCardGames;
                     } else if (round === 'divisional') {
                         // Hardcoded fallback for Divisional Round - load live scores from ESPN
+                        // IMPORTANT: Use hyphenated IDs to match migrated data structure (div-1, div-2, etc.)
                         const divisionalGames = [
-                            { id: 'div1', awayTeam: 'Buffalo Bills', homeTeam: 'Denver Broncos', winner: null, awayScore: 0, homeScore: 0, status: '' },
-                            { id: 'div2', awayTeam: 'San Francisco 49ers', homeTeam: 'Seattle Seahawks', winner: null, awayScore: 0, homeScore: 0, status: '' },
-                            { id: 'div3', awayTeam: 'Houston Texans', homeTeam: 'New England Patriots', winner: null, awayScore: 0, homeScore: 0, status: '' },
-                            { id: 'div4', awayTeam: 'Los Angeles Rams', homeTeam: 'Chicago Bears', winner: null, awayScore: 0, homeScore: 0, status: '' }
+                            { id: 'div-1', awayTeam: 'Buffalo Bills', homeTeam: 'Denver Broncos', winner: null, awayScore: 0, homeScore: 0, status: '' },
+                            { id: 'div-2', awayTeam: 'San Francisco 49ers', homeTeam: 'Seattle Seahawks', winner: null, awayScore: 0, homeScore: 0, status: '' },
+                            { id: 'div-3', awayTeam: 'Houston Texans', homeTeam: 'New England Patriots', winner: null, awayScore: 0, homeScore: 0, status: '' },
+                            { id: 'div-4', awayTeam: 'Los Angeles Rams', homeTeam: 'Chicago Bears', winner: null, awayScore: 0, homeScore: 0, status: '' }
                         ];
                         
                         // Load live scores from ESPN if available - match by team names, not index
@@ -3674,33 +3865,44 @@
                         totalIncorrect += userPlayoffStats.wildcard.incorrect || 0;
                     }
                     
-                    // Build picks structure for display AND calculate stats for non-wildcard rounds
+                    // Build picks structure from flat data - group by round for display
                     rounds.forEach(round => {
-                        if (userPicks[round]) {
-                            allPicksByRound[round] = userPicks[round];
-                            
-                            // Skip wildcard (already counted from Firebase), calculate others in real-time
-                            if (round !== 'wildcard') {
-                                const roundGames = allRoundGames[round] || [];
-                                Object.keys(userPicks[round]).forEach(gameId => {
-                                    const pick = userPicks[round][gameId];
-                                    const game = roundGames.find(g => g.id === gameId);
-                                    
-                                    if (game && game.winner) {
-                                        // Game has a winner - check if pick is correct
-                                        const isCorrect = pick === game.winner || 
-                                                         pick === game.awayTeam || 
-                                                         pick === game.homeTeam;
-                                        
-                                        if (isCorrect && pick === game.winner) {
-                                            totalCorrect++;
-                                        } else if (game.winner) {
-                                            // Pick was made but wrong (game has finished)
-                                            totalIncorrect++;
-                                        }
-                                    }
-                                });
+                        allPicksByRound[round] = {};
+                        const roundPrefix = round === 'wildcard' ? 'wc' :
+                                          round === 'divisional' ? 'div' :
+                                          round === 'conference' ? 'conf' :
+                                          round === 'superbowl' ? 'sb' : '';
+                        
+                        // Filter flat picks into rounds
+                        Object.keys(userPicks).forEach(gameId => {
+                            if (gameId.startsWith(roundPrefix) || 
+                                (round === 'conference' && (gameId === 'afc' || gameId === 'nfc')) ||
+                                (round === 'superbowl' && gameId === 'sb1')) {
+                                allPicksByRound[round][gameId] = userPicks[gameId];
                             }
+                        });
+                        
+                        // Calculate stats for non-wildcard rounds in real-time
+                        if (round !== 'wildcard' && Object.keys(allPicksByRound[round]).length > 0) {
+                            const roundGames = allRoundGames[round] || [];
+                            Object.keys(allPicksByRound[round]).forEach(gameId => {
+                                const pick = allPicksByRound[round][gameId];
+                                const game = roundGames.find(g => g.id === gameId);
+                                
+                                if (game && game.winner) {
+                                    // Game has a winner - check if pick is correct
+                                    const isCorrect = pick === game.winner || 
+                                                     pick === game.awayTeam || 
+                                                     pick === game.homeTeam;
+                                    
+                                    if (isCorrect && pick === game.winner) {
+                                        totalCorrect++;
+                                    } else if (game.winner) {
+                                        // Pick was made but wrong (game has finished)
+                                        totalIncorrect++;
+                                    }
+                                }
+                            });
                         }
                     });
                     
