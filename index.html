@@ -91,6 +91,21 @@
             100% { background-position: 200% 50%; }
         }
 
+        @keyframes bounce {
+            0%, 100% { 
+                transform: translateY(0) rotate(0deg);
+            }
+            25% {
+                transform: translateY(-15px) rotate(-5deg);
+            }
+            50% {
+                transform: translateY(0) rotate(0deg);
+            }
+            75% {
+                transform: translateY(-8px) rotate(5deg);
+            }
+        }
+
         .header h1 {
             font-size: 2.8em;
             margin-bottom: 10px;
@@ -659,8 +674,17 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>⛄ Frosty's NFL Pick'em Pool</h1>
-            <p>Try not to suck</p>
+            <h1>
+                <span style="display: inline-block; animation: bounce 2s ease-in-out infinite;">⛄</span>
+                <span style="color: #69BE28;">Frosty's</span> 
+                <span style="color: #A5D8FF;">NFL</span> 
+                <span style="color: #FFD700;">Pick'em Pool</span>
+            </h1>
+            <p style="font-size: 1em; margin-top: 5px;">
+                <span style="background: linear-gradient(90deg, #002244 0%, #69BE28 50%, #002244 100%); padding: 8px 20px; border-radius: 20px; display: inline-block;">
+                    🏈 GO SEAHAWKS! 🏈
+                </span>
+            </p>
         </div>
 
         <!-- Login Screen -->
@@ -3543,7 +3567,8 @@
                 
                 for (const round of rounds) {
                     const games = await fetchPlayoffGames(round);
-                    if (games.length > 0) {
+                    if (games.length > 0 && round !== 'divisional') {
+                        // Use ESPN data for all rounds EXCEPT divisional (use fallback for divisional)
                         allRoundGames[round] = games;
                     } else if (round === 'wildcard') {
                         // Hardcoded fallback for Wild Card - load winners from Firebase if available
@@ -3576,10 +3601,61 @@
                         }
                         
                         allRoundGames[round] = wildCardGames;
+                    } else if (round === 'divisional') {
+                        // Hardcoded fallback for Divisional Round - load live scores from ESPN
+                        const divisionalGames = [
+                            { id: 'div1', awayTeam: 'Buffalo Bills', homeTeam: 'Denver Broncos', winner: null, awayScore: 0, homeScore: 0, status: '' },
+                            { id: 'div2', awayTeam: 'San Francisco 49ers', homeTeam: 'Seattle Seahawks', winner: null, awayScore: 0, homeScore: 0, status: '' },
+                            { id: 'div3', awayTeam: 'Houston Texans', homeTeam: 'New England Patriots', winner: null, awayScore: 0, homeScore: 0, status: '' },
+                            { id: 'div4', awayTeam: 'Los Angeles Rams', homeTeam: 'Chicago Bears', winner: null, awayScore: 0, homeScore: 0, status: '' }
+                        ];
+                        
+                        // Load live scores from ESPN if available - match by team names, not index
+                        if (games.length > 0) {
+                            console.log("Merging ESPN live scores with Divisional fallback...");
+                            divisionalGames.forEach(fallbackGame => {
+                                // Find matching ESPN game by team names
+                                const espnGame = games.find(g => 
+                                    g.awayTeam === fallbackGame.awayTeam && g.homeTeam === fallbackGame.homeTeam
+                                );
+                                
+                                if (espnGame) {
+                                    console.log(`Matched ${fallbackGame.id}: ${espnGame.awayTeam} @ ${espnGame.homeTeam}`);
+                                    fallbackGame.awayScore = espnGame.awayScore || 0;
+                                    fallbackGame.homeScore = espnGame.homeScore || 0;
+                                    fallbackGame.status = espnGame.status || '';
+                                    fallbackGame.winner = espnGame.winner || null;
+                                } else {
+                                    console.log(`No ESPN match found for ${fallbackGame.id}: ${fallbackGame.awayTeam} @ ${fallbackGame.homeTeam}`);
+                                }
+                            });
+                        }
+                        
+                        // Also load winners from Firebase (in case manually updated)
+                        try {
+                            const divSnapshot = await db.ref('playoff-games/divisional').once('value');
+                            const divData = divSnapshot.val();
+                            console.log("Divisional data from Firebase:", divData);
+                            if (divData) {
+                                divisionalGames.forEach(game => {
+                                    if (divData[game.id]) {
+                                        game.winner = divData[game.id].winner || game.winner;
+                                        game.status = divData[game.id].status || game.status;
+                                        game.awayScore = divData[game.id].awayScore || game.awayScore;
+                                        game.homeScore = divData[game.id].homeScore || game.homeScore;
+                                    }
+                                });
+                            }
+                            console.log("Divisional games with data loaded:", divisionalGames);
+                        } catch (error) {
+                            console.error("Error loading Divisional data from Firebase:", error);
+                        }
+                        
+                        allRoundGames[round] = divisionalGames;
                     }
                 }
                 
-                // Load stats from Firebase instead of calculating
+                // Load Wild Card stats from Firebase, then calculate Divisional+ in real-time
                 const playoffStatsSnapshot = await db.ref('playoff-stats').once('value');
                 const playoffStats = playoffStatsSnapshot.val() || {};
                 
@@ -3588,24 +3664,43 @@
                 Object.keys(allPlayoffPicks).forEach(username => {
                     const userPicks = allPlayoffPicks[username];
                     let allPicksByRound = {};
-                    
-                    // Build picks structure for display
-                    rounds.forEach(round => {
-                        if (userPicks[round]) {
-                            allPicksByRound[round] = userPicks[round];
-                        }
-                    });
-                    
-                    // Get stats from Firebase (pre-calculated)
-                    const userPlayoffStats = playoffStats[username] || {};
                     let totalCorrect = 0;
                     let totalIncorrect = 0;
                     
-                    // Sum up stats from all rounds
+                    // Start with Wild Card stats from Firebase (if available)
+                    const userPlayoffStats = playoffStats[username] || {};
+                    if (userPlayoffStats.wildcard) {
+                        totalCorrect += userPlayoffStats.wildcard.correct || 0;
+                        totalIncorrect += userPlayoffStats.wildcard.incorrect || 0;
+                    }
+                    
+                    // Build picks structure for display AND calculate stats for non-wildcard rounds
                     rounds.forEach(round => {
-                        if (userPlayoffStats[round]) {
-                            totalCorrect += userPlayoffStats[round].correct || 0;
-                            totalIncorrect += userPlayoffStats[round].incorrect || 0;
+                        if (userPicks[round]) {
+                            allPicksByRound[round] = userPicks[round];
+                            
+                            // Skip wildcard (already counted from Firebase), calculate others in real-time
+                            if (round !== 'wildcard') {
+                                const roundGames = allRoundGames[round] || [];
+                                Object.keys(userPicks[round]).forEach(gameId => {
+                                    const pick = userPicks[round][gameId];
+                                    const game = roundGames.find(g => g.id === gameId);
+                                    
+                                    if (game && game.winner) {
+                                        // Game has a winner - check if pick is correct
+                                        const isCorrect = pick === game.winner || 
+                                                         pick === game.awayTeam || 
+                                                         pick === game.homeTeam;
+                                        
+                                        if (isCorrect && pick === game.winner) {
+                                            totalCorrect++;
+                                        } else if (game.winner) {
+                                            // Pick was made but wrong (game has finished)
+                                            totalIncorrect++;
+                                        }
+                                    }
+                                });
+                            }
                         }
                     });
                     
