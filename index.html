@@ -1612,9 +1612,17 @@
                             // Later rounds (divisional, conference, superbowl)
                             // Check if user has picks for current round
                             const picksComplete = await hasCompletedRoundPicks(currentUser, currentRound);
-                            const divisionalStarted = hasDivisionalStarted();
                             
-                            if (!picksComplete && !divisionalStarted) {
+                            // Check if current round games have started
+                            let roundStarted = false;
+                            if (currentRound === 'divisional') {
+                                roundStarted = hasDivisionalStarted();
+                            } else if (currentRound === 'conference') {
+                                const firstConfGame = new Date('2026-01-25T20:00:00Z'); // AFC game starts
+                                roundStarted = new Date() >= firstConfGame;
+                            }
+                            
+                            if (!picksComplete && !roundStarted) {
                                 // No picks yet and games haven't started - default to Playoff Picks
                                 document.getElementById('picksTab').classList.remove('active');
                                 document.getElementById('playoffTab').classList.add('active');
@@ -2896,7 +2904,7 @@
                         { id: 'conf-nfc', away: 'TBD', home: 'TBD', conference: 'NFC' }
                     ],
                     superbowl: [
-                        { id: 'sb-1', away: 'AFC Champion', home: 'NFC Champion', conference: null }
+                        { id: 'sb-1', away: 'New England Patriots', home: 'Seattle Seahawks', conference: null }
                     ]
                 };
                 
@@ -3381,7 +3389,7 @@
             // Playoff round dates (2026 playoffs) - Using END dates for better detection
             const roundDates = {
                 wildcard: { end: new Date('2026-01-13T23:59:59') },      // Wild Card ends Jan 13
-                divisional: { end: new Date('2026-01-19T23:59:59') },    // Divisional ends Jan 19
+                divisional: { end: new Date('2026-01-18T23:59:59') },    // Divisional ends Jan 18 (UPDATED - games complete!)
                 conference: { end: new Date('2026-01-26T23:59:59') },     // Conference ends Jan 26
                 superbowl: { end: new Date('2026-02-09T23:59:59') }       // Super Bowl ends Feb 9
             };
@@ -3551,7 +3559,7 @@
             const roundGameDates = {
                 wildcard: new Date('2026-01-10T22:30:00Z'),     // First Wild Card game: Saturday, Jan 10, 2:30 PM MT
                 divisional: new Date('2026-01-18T22:30:00Z'),   // First Divisional game: Saturday, Jan 18, 2:30 PM MT
-                conference: new Date('2026-01-26T00:00:00Z'),   // First Conference game: Sunday, Jan 26
+                conference: new Date('2026-01-25T20:00:00Z'),   // First Conference game: Sunday, Jan 25, 1:00 PM MT (AFC game)
                 superbowl: new Date('2026-02-09T00:00:00Z')     // Super Bowl: Sunday, Feb 9
             };
             
@@ -3608,6 +3616,27 @@
                         { id: 'wc5', homeTeam: 'Chicago Bears', awayTeam: 'Green Bay Packers', time: 'Saturday, Jan 10 - 6:00 PM MT', conference: 'NFC' },
                         { id: 'wc6', homeTeam: 'Philadelphia Eagles', awayTeam: 'San Francisco 49ers', time: 'Sunday, Jan 11 - 2:30 PM MT', conference: 'NFC' }
                     ];
+                }
+                
+                // Fallback for Super Bowl if ESPN fails OR returns generic teams
+                if (roundInfo.roundKey === 'superbowl') {
+                    console.log("Super Bowl round detected. ESPN games:", games);
+                    // Check if ESPN returned generic placeholder teams
+                    const hasGenericTeams = games.length > 0 && (
+                        games[0].homeTeam === 'NFC' || 
+                        games[0].homeTeam === 'AFC' ||
+                        games[0].awayTeam === 'NFC' || 
+                        games[0].awayTeam === 'AFC' ||
+                        (games[0].homeTeam && games[0].homeTeam.includes('Champion')) ||
+                        (games[0].awayTeam && games[0].awayTeam.includes('Champion'))
+                    );
+                    
+                    if (games.length === 0 || hasGenericTeams) {
+                        console.log("Using hardcoded Super Bowl game with actual teams");
+                        games = [
+                            { id: 'sb-1', homeTeam: 'Seattle Seahawks', awayTeam: 'New England Patriots', time: 'Sunday, Feb 8 - 4:30 PM MT', conference: null }
+                        ];
+                    }
                 }
                 
                 if (games.length === 0) {
@@ -3757,6 +3786,25 @@
                 
                 for (const round of rounds) {
                     const games = await fetchPlayoffGames(round);
+                    
+                    // Check for Super Bowl with generic teams
+                    if (round === 'superbowl' && games.length > 0) {
+                        const hasGenericTeams = games[0].homeTeam === 'NFC' || 
+                                              games[0].homeTeam === 'AFC' ||
+                                              games[0].awayTeam === 'NFC' || 
+                                              games[0].awayTeam === 'AFC' ||
+                                              (games[0].homeTeam && games[0].homeTeam.includes('Champion')) ||
+                                              (games[0].awayTeam && games[0].awayTeam.includes('Champion'));
+                        
+                        if (hasGenericTeams) {
+                            console.log("Bracket Dashboard: Replacing generic Super Bowl teams with actual teams");
+                            allRoundGames[round] = [
+                                { id: 'sb-1', awayTeam: 'New England Patriots', homeTeam: 'Seattle Seahawks', winner: null, awayScore: 0, homeScore: 0, status: '' }
+                            ];
+                            continue;
+                        }
+                    }
+                    
                     if (games.length > 0 && round !== 'divisional') {
                         // Use ESPN data for all rounds EXCEPT divisional (use fallback for divisional)
                         allRoundGames[round] = games;
@@ -3876,7 +3924,7 @@
                         // Filter flat picks into rounds
                         Object.keys(userPicks).forEach(gameId => {
                             if (gameId.startsWith(roundPrefix) || 
-                                (round === 'conference' && (gameId === 'afc' || gameId === 'nfc')) ||
+                                (round === 'conference' && (gameId === 'afc' || gameId === 'nfc' || gameId === 'conf-afc' || gameId === 'conf-nfc')) ||
                                 (round === 'superbowl' && gameId === 'sb1')) {
                                 allPicksByRound[round][gameId] = userPicks[gameId];
                             }
@@ -3955,8 +4003,9 @@
                     // Determine current round for collapsing logic
                     const currentRound = await getCurrentPlayoffRound();
                     
-                    // HIDE Wild Card for now (remove this line later to show it)
+                    // HIDE Wild Card and Divisional (completed rounds)
                     if (roundKey === 'wildcard') continue;
+                    if (roundKey === 'divisional') continue;
                     
                     // Hide Conference Championships until Divisional is complete
                     if (roundKey === 'conference' && currentRound === 'divisional') continue;
@@ -3997,7 +4046,18 @@
                         userStats.forEach(user => {
                             // Access picks correctly - user.picks is already the allPicksByRound object
                             const roundPicks = user.picks[roundKey];
-                            const pick = roundPicks ? roundPicks[game.id] : null;
+                            
+                            // For Conference Championships, check multiple possible game IDs
+                            let pick = roundPicks ? roundPicks[game.id] : null;
+                            
+                            // Fallback for Conference Championships - check alternate IDs
+                            if (!pick && roundKey === 'conference') {
+                                if (game.id === 'conf-afc') {
+                                    pick = roundPicks ? roundPicks['afc'] : null;
+                                } else if (game.id === 'conf-nfc') {
+                                    pick = roundPicks ? roundPicks['nfc'] : null;
+                                }
+                            }
                             
                             if (pick) {
                                 // Check if pick matches away team (handle variations like "Los Angeles Rams" vs "LA Rams")
