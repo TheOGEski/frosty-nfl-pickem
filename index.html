@@ -3575,6 +3575,21 @@
             try {
                 // Save to flat structure: /playoff-picks/{username}/{gameId}
                 await db.ref(`playoff-picks/${currentUser}/${gameId}`).set(team);
+                
+                // For Super Bowl, also save tiebreaker if provided
+                if (roundKey === 'superbowl') {
+                    const tiebreakerInput = document.getElementById('superbowlTiebreaker');
+                    if (tiebreakerInput && tiebreakerInput.value) {
+                        const score = parseInt(tiebreakerInput.value);
+                        if (!isNaN(score) && score >= 0) {
+                            await db.ref(`playoff-tiebreakers/${currentUser}/superbowl`).set({
+                                score: score,
+                                timestamp: Date.now()
+                            });
+                        }
+                    }
+                }
+                
                 showStatus("Playoff pick saved!", "success");
                 setTimeout(() => showStatus("", ""), 2000);
                 // Reload bracket to show updated pick
@@ -3712,6 +3727,29 @@
                     });
                 }
                 
+                // Add tiebreaker section for Super Bowl
+                if (roundInfo.roundKey === 'superbowl') {
+                    html += '<div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 10px; padding: 20px; margin-top: 30px;">';
+                    html += '<h4 style="color: #856404; margin-bottom: 15px;">🏆 Super Bowl Tiebreaker</h4>';
+                    html += '<p style="color: #856404;">Enter your prediction for the combined final score of the Super Bowl:</p>';
+                    html += '<div style="margin-top: 15px;">';
+                    html += '<input type="number" id="superbowlTiebreaker" placeholder="Total points" min="0" max="150" style="width: 120px; padding: 10px; border: 2px solid #ffc107; border-radius: 8px; font-size: 16px; text-align: center;">';
+                    html += '</div>';
+                    html += '<p style="margin-top: 10px; font-size: 14px; color: #856404; font-style: italic;">This will be used to break ties in Super Bowl picks</p>';
+                    html += '</div>';
+                    
+                    // Load existing tiebreaker if any
+                    if (currentUser && db) {
+                        db.ref(`playoff-tiebreakers/${currentUser}/superbowl`).once('value').then(snapshot => {
+                            const data = snapshot.val();
+                            if (data && data.score) {
+                                const input = document.getElementById('superbowlTiebreaker');
+                                if (input) input.value = data.score;
+                            }
+                        });
+                    }
+                }
+                
                 html += '</div>';
                 container.innerHTML = html;
                 
@@ -3801,7 +3839,9 @@
                             allRoundGames[round] = [
                                 { id: 'sb-1', awayTeam: 'New England Patriots', homeTeam: 'Seattle Seahawks', winner: null, awayScore: 0, homeScore: 0, status: '' }
                             ];
-                            continue;
+                            // Don't continue - let it fall through to display the game
+                        } else if (games.length > 0) {
+                            allRoundGames[round] = games;
                         }
                     }
                     
@@ -4038,12 +4078,57 @@
                         
                         html += `<h4 style="color: #002244; margin-bottom: 15px; text-align: center;">${game.awayTeam} @ ${game.homeTeam}${scoreDisplay}</h4>`;
                         
-                        // Group users by their picks for this round
-                        const awayPickers = [];
-                        const homePickers = [];
-                        const noPick = [];
+                        // Check if this round has started - only show all picks after first game starts
+                        const roundStartDates = {
+                            conference: new Date('2026-01-25T20:00:00Z'),  // AFC Championship starts (1:00 PM MT = 8:00 PM UTC)
+                            superbowl: new Date('2026-02-09T01:30:00Z')    // Super Bowl starts (Feb 8, 6:30 PM ET = Feb 9, 1:30 AM UTC)
+                        };
+                        const now = new Date();
+                        const roundStarted = roundStartDates[roundKey] ? now >= roundStartDates[roundKey] : true;
+                        console.log(`Round: ${roundKey}, Start Date: ${roundStartDates[roundKey]}, Current Time: ${now}, Started: ${roundStarted}`);
                         
-                        userStats.forEach(user => {
+                        // If round hasn't started, only show current user's pick
+                        if (!roundStarted) {
+                            html += '<div style="background: rgba(255, 215, 0, 0.1); padding: 15px; border-radius: 6px; margin: 15px 0; text-align: center; color: #856404;">';
+                            html += '🔒 Other users\' picks will be visible once the games begin';
+                            html += '</div>';
+                            
+                            // Show only current user's pick
+                            const currentUserStats = userStats.find(u => u.username === currentUser);
+                            if (currentUserStats) {
+                                const roundPicks = currentUserStats.picks[roundKey];
+                                let pick = roundPicks ? roundPicks[game.id] : null;
+                                
+                                // Fallback for Conference Championships
+                                if (!pick && roundKey === 'conference') {
+                                    if (game.id === 'conf-afc') {
+                                        pick = roundPicks ? roundPicks['afc'] : null;
+                                    } else if (game.id === 'conf-nfc') {
+                                        pick = roundPicks ? roundPicks['nfc'] : null;
+                                    }
+                                }
+                                
+                                if (pick) {
+                                    html += '<div style="background: rgba(105, 190, 40, 0.1); padding: 15px; border-radius: 6px; margin: 15px 0;">';
+                                    html += `<strong>Your Pick:</strong> ${pick}`;
+                                    html += '</div>';
+                                } else {
+                                    html += '<div style="background: rgba(220, 53, 69, 0.1); padding: 15px; border-radius: 6px; margin: 15px 0;">';
+                                    html += '⚠️ You haven\'t made a pick for this game yet';
+                                    html += '</div>';
+                                }
+                            }
+                            
+                            // Close game div and skip showing all users' picks
+                            html += `</div>`;
+                        } else {
+                            // Round has started - show all users' picks
+                            // Group users by their picks for this round
+                            const awayPickers = [];
+                            const homePickers = [];
+                            const noPick = [];
+                            
+                            userStats.forEach(user => {
                             // Access picks correctly - user.picks is already the allPicksByRound object
                             const roundPicks = user.picks[roundKey];
                             
@@ -4127,6 +4212,7 @@
                         }
                         
                         html += `</div>`;
+                        }
                     });
                     
                     // Close collapsible content div if Wild Card was collapsed
